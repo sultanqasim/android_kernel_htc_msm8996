@@ -1707,7 +1707,7 @@ static ssize_t wcd9xxx_slimslave_reg_show(char __user *ubuf, size_t count,
 {
 	int i, reg_val, len;
 	ssize_t total = 0;
-	char tmp_buf[25]; 
+	char tmp_buf[25]; /* each line is 12 bytes but 25 for margin of error */
 
 	for (i = (int) *ppos / 12; i <= SLIM_MAX_REG_ADDR; i++) {
 		reg_val = wcd9xxx_interface_reg_read(debugCodec, i);

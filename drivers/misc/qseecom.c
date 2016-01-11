@@ -1990,6 +1990,12 @@ static int qseecom_load_app(struct qseecom_dev_handle *data, void __user *argp)
 		entry->app_id = app_id;
 		entry->ref_cnt = 1;
 		entry->app_arch = load_img_req.app_arch;
+		/*
+		* keymaster app may be first loaded as "keymaste" by qseecomd,
+		* and then used as "keymaster" on some targets. To avoid app
+		* name checking error, register "keymaster" into app_list and
+		* thread private data.
+		*/
 		if (!strcmp(load_img_req.img_name, "keymaste"))
 			strlcpy(entry->app_name, "keymaster",
 					MAX_APP_NAME_SIZE);

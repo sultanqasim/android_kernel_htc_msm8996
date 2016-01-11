@@ -3300,6 +3300,9 @@ static void addrconf_dad_begin(struct inet6_ifaddr *ifp)
 	if (ifp->flags & IFA_F_OPTIMISTIC) {
 		ip6_ins_rt(ifp->rt);
 		if (ipv6_use_optimistic_addr(idev)) {
+			/* Because optimistic nodes can use this address,
+			 * notify listeners. If DAD fails, RTM_DELADDR is sent.
+			 */
 			notify = true;
 		}
 	}
