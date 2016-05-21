@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -55,6 +55,7 @@
 #define PRIORITY_QUEUE (QUEUE_0)
 #define SYNC_QUEUE (QUEUE_1)
 
+struct mutex g_cci_mutex;
 static struct v4l2_subdev *g_cci_subdev;
 
 static struct msm_cam_clk_info cci_clk_info[CCI_NUM_CLK_CASES][CCI_NUM_CLK_MAX];
@@ -1262,8 +1263,7 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		return rc;
 	}
 
-	rc = cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CCI,
-			CAM_AHB_SVS_VOTE);
+	rc = cam_config_ahb_clk(CAM_AHB_CLIENT_CCI, CAMERA_AHB_SVS_VOTE);
 	if (rc < 0) {
 		pr_err("%s: failed to vote for AHB\n", __func__);
 		return rc;
@@ -1423,8 +1423,8 @@ clk_enable_failed:
 		cci_dev->cci_gpio_tbl_size, 0);
 request_gpio_failed:
 	cci_dev->ref_count--;
-	if (cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CCI,
-		CAM_AHB_SUSPEND_VOTE) < 0)
+	if (cam_config_ahb_clk(CAM_AHB_CLIENT_CCI,
+		CAMERA_AHB_SUSPEND_VOTE) < 0)
 		pr_err("%s: failed to remove vote for AHB\n", __func__);
 	return rc;
 }
@@ -1481,8 +1481,8 @@ static int32_t msm_cci_release(struct v4l2_subdev *sd)
 	cci_dev->cci_clk_src = 0;
 
 ahb_vote_suspend:
-	if (cam_config_ahb_clk(NULL, 0, CAM_AHB_CLIENT_CCI,
-		CAM_AHB_SUSPEND_VOTE) < 0)
+	if (cam_config_ahb_clk(CAM_AHB_CLIENT_CCI,
+		CAMERA_AHB_SUSPEND_VOTE) < 0)
 		pr_err("%s: failed to remove vote for AHB\n", __func__);
 	return rc;
 }
@@ -1549,6 +1549,7 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	int32_t rc = 0;
 	CDBG("%s line %d cmd %d\n", __func__, __LINE__,
 		cci_ctrl->cmd);
+	mutex_lock(&g_cci_mutex);
 	switch (cci_ctrl->cmd) {
 	case MSM_CCI_INIT:
 		rc = msm_cci_init(sd, cci_ctrl);
@@ -1577,6 +1578,7 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	}
 	CDBG("%s line %d rc %d\n", __func__, __LINE__, rc);
 	cci_ctrl->status = rc;
+	mutex_unlock(&g_cci_mutex);
 	return rc;
 }
 
@@ -2088,7 +2090,7 @@ static int msm_cci_probe(struct platform_device *pdev)
 	msm_cci_init_cci_params(new_cci_dev);
 	msm_cci_init_clk_params(new_cci_dev);
 	msm_cci_init_gpio_params(new_cci_dev);
-
+	mutex_init(&g_cci_mutex);
 	rc = msm_camera_get_dt_vreg_data(new_cci_dev->pdev->dev.of_node,
 		&(new_cci_dev->cci_vreg), &(new_cci_dev->regulator_count));
 	if (rc < 0) {

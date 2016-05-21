@@ -1072,14 +1072,20 @@ static const struct wcd9xxx_codec_type wcd9xxx_codecs[] = {
 	},
 };
 
-static void wcd9335_bring_up(struct wcd9xxx *wcd9xxx)
+static int wcd9335_bring_up(struct wcd9xxx *wcd9xxx)
 {
 	int val, byte0;
+	int ret = 0;
 
 	val = __wcd9xxx_reg_read(wcd9xxx,
 				 WCD9335_CHIP_TIER_CTRL_EFUSE_VAL_OUT0);
 	byte0 = __wcd9xxx_reg_read(wcd9xxx,
 				   WCD9335_CHIP_TIER_CTRL_CHIP_ID_BYTE0);
+
+	if ((val < 0) || (byte0 < 0)) {
+		pr_err("%s: wcd9335 version detection fail!\n", __func__);
+		return -EINVAL;
+	}
 
 	if ((val & 0x80) && (byte0 == 0x0)) {
 		dev_info(wcd9xxx->dev, "%s: wcd9335 codec version is v1.1\n",
@@ -1108,7 +1114,7 @@ static void wcd9335_bring_up(struct wcd9xxx *wcd9xxx)
 		__wcd9xxx_reg_write(wcd9xxx,
 				    WCD9335_CODEC_RPM_PWR_CDC_DIG_HM_CTL, 0x3);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9335_CODEC_RPM_RST_CTL, 0x3);
-	} else {
+	} else if ((byte0 == 0) && (!(val & 0x80))) {
 		dev_info(wcd9xxx->dev, "%s: wcd9335 codec version is v1.0\n",
 			 __func__);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9335_CODEC_RPM_RST_CTL, 0x01);
@@ -1117,7 +1123,11 @@ static void wcd9335_bring_up(struct wcd9xxx *wcd9xxx)
 		__wcd9xxx_reg_write(wcd9xxx,
 				    WCD9335_CODEC_RPM_PWR_CDC_DIG_HM_CTL, 0x3);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9335_CODEC_RPM_RST_CTL, 0x3);
+	} else {
+		ret = -EINVAL;
 	}
+
+	return ret;
 }
 
 static void wcd9335_bring_down(struct wcd9xxx *wcd9xxx)
@@ -1126,12 +1136,14 @@ static void wcd9335_bring_down(struct wcd9xxx *wcd9xxx)
 			WCD9335_CODEC_RPM_PWR_CDC_DIG_HM_CTL, 0x4);
 }
 
-static void wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
+static int wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
 {
+	int ret = 0;
+
 	pr_debug("%s: Codec Type: %d\n", __func__, wcd9xxx->type);
 
 	if (wcd9xxx->type == WCD9335) {
-		wcd9335_bring_up(wcd9xxx);
+		ret = wcd9335_bring_up(wcd9xxx);
 	} else if (wcd9xxx->type == WCD9330) {
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_LEAKAGE_CTL, 0x4);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_CDC_CTL, 0);
@@ -1147,6 +1159,8 @@ static void wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
 		__wcd9xxx_reg_write(wcd9xxx, WCD9XXX_A_CDC_CTL, 3);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9XXX_A_LEAKAGE_CTL, 3);
 	}
+
+	return ret;
 }
 
 static void wcd9xxx_bring_down(struct wcd9xxx *wcd9xxx)
@@ -1545,7 +1559,11 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx)
 	mutex_init(&wcd9xxx->xfer_lock);
 
 	dev_set_drvdata(wcd9xxx->dev, wcd9xxx);
-	wcd9xxx_bring_up(wcd9xxx);
+	ret = wcd9xxx_bring_up(wcd9xxx);
+	if (ret) {
+		ret = -EPROBE_DEFER;
+		goto err_bring_up;
+	}
 
 	found = wcd9xxx_check_codec_type(wcd9xxx, &version);
 	if (!found) {
@@ -1622,6 +1640,7 @@ err_irq:
 err:
 	wcd9xxx_bring_down(wcd9xxx);
 	wcd9xxx_core_res_deinit(&wcd9xxx->core_res);
+err_bring_up:
 	mutex_destroy(&wcd9xxx->io_lock);
 	mutex_destroy(&wcd9xxx->xfer_lock);
 	return ret;
@@ -2280,8 +2299,8 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 
 		ret = wcd9xxx_device_init(wcd9xxx);
 		if (ret) {
-			pr_err("%s: error, initializing device failed\n",
-			       __func__);
+			pr_err("%s: error, initializing device failed (%d)\n",
+			       __func__, ret);
 			goto err_device_init;
 		}
 
@@ -2613,7 +2632,6 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	u32 mclk_rate = 0;
 	u32 dmic_sample_rate = 0;
 	u32 mad_dmic_sample_rate = 0;
-	u32 dmic_clk_drive;
 	const char *static_prop_name = "qcom,cdc-static-supplies";
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *cp_supplies_name = "qcom,cdc-cp-supplies";
@@ -2732,21 +2750,6 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 						  mad_dmic_sample_rate,
 						  pdata->mclk_rate,
 						  "mad_dmic_rate");
-
-	pdata->dmic_clk_drv = WCD9XXX_DMIC_CLK_DRIVE_UNDEFINED;
-	ret = of_property_read_u32(dev->of_node,
-				   "qcom,cdc-dmic-clk-drv-strength",
-				   &dmic_clk_drive);
-	if (ret)
-		dev_err(dev, "Looking up %s property in node %s failed, err = %d",
-			"qcom,cdc-dmic-clk-drv-strength",
-			dev->of_node->full_name, ret);
-	else if (dmic_clk_drive != 2 && dmic_clk_drive != 4 &&
-		 dmic_clk_drive != 8 && dmic_clk_drive != 16)
-		dev_err(dev, "Invalid cdc-dmic-clk-drv-strength %d\n",
-			dmic_clk_drive);
-	else
-		pdata->dmic_clk_drv = dmic_clk_drive;
 
 	ret = of_property_read_string(dev->of_node,
 				"qcom,cdc-variant",
@@ -2962,6 +2965,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	if (ret) {
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
+		ret = -EPROBE_DEFER;
 		goto err_reset;
 	}
 	wcd9xxx->read_dev = wcd9xxx_slim_read_device;
@@ -2985,6 +2989,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	if (ret) {
 		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
+		ret = -EPROBE_DEFER;
 		goto err_slim_add;
 	}
 	wcd9xxx_inf_la = wcd9xxx->slim_slave->laddr;
@@ -2992,7 +2997,8 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 
 	ret = wcd9xxx_device_init(wcd9xxx);
 	if (ret) {
-		pr_err("%s: error, initializing device failed\n", __func__);
+		pr_err("%s: error, initializing device failed (%d)\n",
+			__func__, ret);
 		goto err_slim_add;
 	}
 #ifdef CONFIG_DEBUG_FS

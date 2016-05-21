@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,8 +25,7 @@
 #define TASHA_SB_PGD_PORT_RX_BASE   0x40
 #define TASHA_SB_PGD_PORT_TX_BASE   0x50
 
-#define TASHA_ZDET_SUPPORTED true
-/* z value defined in milliohm */
+#define TASHA_ZDET_SUPPORTED false 
 #define TASHA_ZDET_VAL_32	32000
 #define TASHA_ZDET_VAL_400	400000
 #define TASHA_ZDET_VAL_1200	1200000
@@ -40,7 +39,6 @@
 #define WCD9335_DMIC_CLK_DIV_6  0x3
 #define WCD9335_DMIC_CLK_DIV_8  0x4
 #define WCD9335_DMIC_CLK_DIV_16  0x5
-#define WCD9335_DMIC_CLK_DRIVE_DEFAULT 0x02
 
 #define WCD9335_ANC_DMIC_X2_FULL_RATE 1
 #define WCD9335_ANC_DMIC_X2_HALF_RATE 0
@@ -87,24 +85,6 @@ enum wcd9335_codec_event {
 	WCD9335_CODEC_EVENT_CODEC_UP = 0,
 };
 
-enum tasha_on_demand_supply {
-	ON_DEMAND_MICBIAS = 0,
-	ON_DEMAND_SUPPLIES_MAX,
-};
-
-/* structure used to put the defined
- * ondemand supply for codec
- * and count being used.
- */
-struct on_demand_supply {
-	struct regulator *supply;
-	int ondemand_supply_count;
-};
-
-/* Dai data structure holds the
- * dai specific info like rate,
- * channel number etc.
- */
 struct tasha_codec_dai_data {
 	u32 rate;
 	u32 *ch_num;

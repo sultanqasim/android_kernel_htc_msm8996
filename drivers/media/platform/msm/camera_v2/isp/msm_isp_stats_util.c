@@ -631,6 +631,7 @@ int msm_isp_stats_reset(struct vfe_device *vfe_dev)
 	struct msm_vfe_stats_stream *stream_info = NULL;
 	struct msm_vfe_stats_shared_data *stats_data = &vfe_dev->stats_data;
 	struct msm_isp_timestamp timestamp;
+        pr_err("%s: E\n", __func__);
 
 	msm_isp_get_timestamp(&timestamp);
 
@@ -649,7 +650,7 @@ int msm_isp_stats_reset(struct vfe_device *vfe_dev)
 			return rc;
 		}
 	}
-
+        pr_err("%s: X\n", __func__);
 	return rc;
 }
 
@@ -658,6 +659,7 @@ int msm_isp_stats_restart(struct vfe_device *vfe_dev)
 	int i = 0;
 	struct msm_vfe_stats_stream *stream_info = NULL;
 	struct msm_vfe_stats_shared_data *stats_data = &vfe_dev->stats_data;
+        pr_err("%s: E\n", __func__);
 
 	for (i = 0; i < MSM_ISP_STATS_MAX; i++) {
 		stream_info = &stats_data->stream_info[i];
@@ -666,6 +668,7 @@ int msm_isp_stats_restart(struct vfe_device *vfe_dev)
 		msm_isp_init_stats_ping_pong_reg(vfe_dev, stream_info);
 	}
 
+        pr_err("%s: X\n", __func__);
 	return 0;
 }
 

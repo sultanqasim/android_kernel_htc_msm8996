@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1105,7 +1105,7 @@ void mdss_dsi_core_clk_deinit(struct device *dev, struct dsi_shared_data *sdata)
 		devm_clk_put(dev, sdata->mdp_core_clk);
 }
 
-int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy)
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
@@ -1125,11 +1125,9 @@ int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy)
 		return -EINVAL;
 	}
 
-	if (update_phy) {
-		pinfo->mipi.frame_rate = mdss_panel_calc_frame_rate(pinfo);
-		pr_debug("%s: new frame rate %d\n",
-				__func__, pinfo->mipi.frame_rate);
-	}
+	
+	pinfo->mipi.frame_rate = mdss_panel_calc_frame_rate(pinfo);
+	pr_debug("%s: new frame rate %d\n", __func__, pinfo->mipi.frame_rate);
 
 	rc = mdss_dsi_clk_div_config(&pdata->panel_info,
 			pdata->panel_info.mipi.frame_rate);
@@ -1162,15 +1160,12 @@ int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy)
 		return rc;
 	}
 
-	if (update_phy) {
-		/* phy panel timing calaculation */
-		rc = mdss_dsi_phy_calc_timing_param(pinfo,
-				ctrl_pdata->shared_data->phy_rev,
-				pinfo->mipi.frame_rate);
-		if (rc) {
-			pr_err("Error in calculating phy timings\n");
-			return rc;
-		}
+	
+	rc = mdss_dsi_phy_calc_timing_param(pinfo,
+		ctrl_pdata->shared_data->phy_rev, pinfo->mipi.frame_rate);
+	if (rc) {
+		pr_err("%s: unable to calculate phy timings\n", __func__);
+		return rc;
 	}
 
 	return rc;
@@ -1502,15 +1497,49 @@ int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 	return 0;
 }
 
-/**
- * mdss_dsi_ulps_config() - Program DSI lanes to enter/exit ULPS mode
- * @ctrl: pointer to DSI controller structure
- * @enable: 1 to enter ULPS, 0 to exit ULPS
- *
- * This function executes the necessary programming sequence to enter/exit
- * DSI Ultra-Low Power State (ULPS). This function assumes that the link and
- * core clocks are already on.
- */
+static bool mdss_dsi_is_ulps_req_valid(struct mdss_dsi_ctrl_pdata *ctrl,
+		int enable)
+{
+	struct mdss_dsi_ctrl_pdata *octrl = NULL;
+	struct mdss_panel_data *pdata = &ctrl->panel_data;
+	struct mdss_panel_info *pinfo = &pdata->panel_info;
+
+	pr_debug("%s: checking ulps req validity for ctrl%d\n",
+		__func__, ctrl->ndx);
+
+	if (!mdss_dsi_ulps_feature_enabled(pdata) &&
+			!pinfo->ulps_suspend_enabled) {
+		pr_debug("%s: ULPS feature is not enabled\n", __func__);
+		return false;
+	}
+
+	if (enable && pinfo->cont_splash_enabled) {
+		pr_debug("%s: skip ULPS config with splash screen enabled\n",
+			__func__);
+		return false;
+	}
+
+	if (enable && !ctrl->mmss_clamp &&
+		!(ctrl->ctrl_state & CTRL_STATE_PANEL_INIT) &&
+		!pdata->panel_info.ulps_suspend_enabled) {
+		pr_debug("%s: panel not yet initialized\n", __func__);
+		return false;
+	}
+
+	if (mdss_dsi_is_hw_config_split(ctrl->shared_data)) {
+		octrl = mdss_dsi_get_other_ctrl(ctrl);
+		if (enable && !ctrl->mmss_clamp && octrl &&
+			!(octrl->ctrl_state & CTRL_STATE_PANEL_INIT) &&
+			!pdata->panel_info.ulps_suspend_enabled) {
+			pr_debug("%s: split-DSI, other ctrl not ready yet\n",
+				__func__);
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	int enable)
 {
@@ -1534,20 +1563,9 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	pinfo = &pdata->panel_info;
 	mipi = &pinfo->mipi;
 
-	if (!mdss_dsi_ulps_feature_enabled(pdata) &&
-			!pinfo->ulps_suspend_enabled) {
-		pr_debug("%s: ULPS feature is not enabled\n", __func__);
-		return 0;
-	}
-
-	/*
-	 * No need to enter ULPS when transitioning from splash screen to
-	 * boot animation since it is expected that the clocks would be turned
-	 * right back on.
-	 */
-	if (pinfo->cont_splash_enabled) {
-		pr_debug("%s: skip ULPS config with splash screen enabled\n",
-			__func__);
+	if (!mdss_dsi_is_ulps_req_valid(ctrl, enable)) {
+		pr_debug("%s: skiping ULPS config for ctrl%d, enable=%d\n",
+			__func__, ctrl->ndx, enable);
 		return 0;
 	}
 
@@ -1566,16 +1584,21 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (mipi->data_lane3)
 		active_lanes |= BIT(3);
 
-	pr_debug("%s: configuring ulps (%s) for ctrl%d, active lanes=0x%08x\n",
+	pr_debug("%s: configuring ulps (%s) for ctrl%d, active lanes=0x%08x,clamps=%s\n",
 		__func__, (enable ? "on" : "off"), ctrl->ndx,
-		active_lanes);
+		active_lanes, ctrl->mmss_clamp ? "enabled" : "disabled");
 
 	if (enable && !ctrl->ulps) {
-		/*
-		 * ULPS Entry Request.
-		 * Wait for a short duration to ensure that the lanes
-		 * enter ULP state.
-		 */
+		if (!ctrl->mmss_clamp) {
+			ret = mdss_dsi_wait_for_lane_idle(ctrl);
+			if (ret) {
+				pr_warn("%s: lanes not idle, skip ulps\n",
+					__func__);
+				ret = 0;
+				goto error;
+			}
+		}
+
 		MIPI_OUTP(ctrl->ctrl_base + 0x0AC, active_lanes);
 		usleep_range(100, 100);
 
@@ -1923,6 +1946,11 @@ int mdss_dsi_pre_clkoff_cb(void *priv,
 			rc = mdss_dsi_clamp_ctrl(ctrl, 1);
 			if (rc)
 				pr_err("%s: Failed to enable dsi clamps. rc=%d\n",
+					__func__, rc);
+		} else {
+			rc = mdss_dsi_ulps_config(ctrl, 0);
+			if (rc)
+				pr_err("%s: failed to disable ulps. rc=%d\n",
 					__func__, rc);
 		}
 	}

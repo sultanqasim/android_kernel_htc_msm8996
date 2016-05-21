@@ -267,8 +267,11 @@ static inline int kgsl_allocate_global(struct kgsl_device *device,
 	memdesc->priv = priv;
 
 	ret = kgsl_sharedmem_alloc_contig(device, memdesc, NULL, (size_t) size);
-	if (ret == 0)
-		kgsl_mmu_add_global(device, memdesc);
+	if (!ret) {
+		ret = kgsl_add_global_pt_entry(device, memdesc);
+		if (ret)
+			kgsl_sharedmem_free(memdesc);
+	}
 
 	return ret;
 }
@@ -277,16 +280,14 @@ static inline int kgsl_allocate_global(struct kgsl_device *device,
  * kgsl_free_global() - Free a device wide GPU allocation and remove it from the
  * global pagetable entry list
  *
- * @device: Pointer to the device
  * @memdesc: Pointer to the GPU memory descriptor to free
  *
  * Remove the specific memory descriptor from the global pagetable entry list
  * and free it
  */
-static inline void kgsl_free_global(struct kgsl_device *device,
-		struct kgsl_memdesc *memdesc)
+static inline void kgsl_free_global(struct kgsl_memdesc *memdesc)
 {
-	kgsl_mmu_remove_global(device, memdesc);
+	kgsl_remove_global_pt_entry(memdesc);
 	kgsl_sharedmem_free(memdesc);
 }
 

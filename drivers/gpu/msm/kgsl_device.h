@@ -287,7 +287,10 @@ struct kgsl_device {
 	int cff_dump_enable;
 	struct workqueue_struct *events_wq;
 
-	struct device *busmondev; /* pseudo dev for GPU BW voting governor */
+	struct device *busmondev; 
+
+	
+	int gpu_fault_no_panic;
 };
 
 #define KGSL_MMU_DEVICE(_mmu) \
@@ -416,7 +419,7 @@ struct kgsl_process_private {
 	struct kobject kobj;
 	struct dentry *debug_root;
 	struct {
-		uint64_t cur;
+		atomic_long_t cur;
 		uint64_t max;
 	} stats[KGSL_MEM_ENTRY_MAX];
 	struct idr syncsource_idr;
@@ -492,9 +495,22 @@ struct kgsl_device *kgsl_get_device(int dev_idx);
 static inline void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
-	priv->stats[type].cur += size;
-	if (priv->stats[type].max < priv->stats[type].cur)
-		priv->stats[type].max = priv->stats[type].cur;
+	uint64_t cur;
+	if (type >= KGSL_MEM_ENTRY_MAX)
+		return;
+
+	spin_lock(&priv->mem_lock);
+	atomic_long_add(size, &priv->stats[type].cur);
+	cur = atomic_long_read(&priv->stats[type].cur);
+	if (priv->stats[type].max < cur)
+		priv->stats[type].max = cur;
+	spin_unlock(&priv->mem_lock);
+}
+
+static inline void kgsl_process_sub_stats(struct kgsl_process_private *priv,
+		unsigned int type, size_t size)
+{
+	atomic_long_sub(size, &priv->stats[type].cur);
 }
 
 static inline void kgsl_regread(struct kgsl_device *device,
@@ -634,13 +650,9 @@ long kgsl_ioctl_copy_in(unsigned int kernel_cmd, unsigned int user_cmd,
 long kgsl_ioctl_copy_out(unsigned int kernel_cmd, unsigned int user_cmd,
 		unsigned long, unsigned char *ptr);
 
-/**
- * kgsl_context_put() - Release context reference count
- * @context: Pointer to the KGSL context to be released
- *
- * Reduce the reference count on a KGSL context and destroy it if it is no
- * longer needed
- */
+int kgsl_mem_entry_attach_process(struct kgsl_mem_entry *entry,
+				   struct kgsl_device_private *dev_priv);
+
 static inline void
 kgsl_context_put(struct kgsl_context *context)
 {

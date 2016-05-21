@@ -103,6 +103,14 @@ static int mmc_decode_cid(struct mmc_card *card)
 		card->cid.serial	= UNSTUFF_BITS(resp, 16, 32);
 		card->cid.month		= UNSTUFF_BITS(resp, 12, 4);
 		card->cid.year		= UNSTUFF_BITS(resp, 8, 4) + 1997;
+
+		
+		if (card->cid.manfid == CID_MANFID_TOSHIBA ||
+		    card->cid.manfid == CID_MANFID_MICRON  ||
+		    card->cid.manfid == CID_MANFID_SAMSUNG ||
+		    card->cid.manfid == CID_MANFID_HYNIX)
+			card->cid.fwrev = UNSTUFF_BITS(resp, 48, 8);
+
 		break;
 
 	default:
@@ -192,10 +200,7 @@ static int mmc_decode_csd(struct mmc_card *card)
 	return 0;
 }
 
-/*
- * Read extended CSD.
- */
-static int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd)
+int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd)
 {
 	int err;
 	u8 *ext_csd;
@@ -403,13 +408,80 @@ static void mmc_manage_gp_partitions(struct mmc_card *card, u8 *ext_csd)
 	}
 }
 
-/*
- * Decode extended CSD.
- */
+static void htc_mmc_show_cid_ext_csd(struct mmc_card *card, u8 *ext_csd)
+{
+	char *buf;
+	int i, j;
+	ssize_t n = 0;
+	char *check_fw;
+
+	if (mmc_card_mmc(card)) {
+		pr_info("%s: cid %08x%08x%08x%08x\n",
+			mmc_hostname(card->host),
+			card->raw_cid[0], card->raw_cid[1],
+			card->raw_cid[2], card->raw_cid[3]);
+		pr_info("%s: csd %08x%08x%08x%08x\n",
+			mmc_hostname(card->host),
+			card->raw_csd[0], card->raw_csd[1],
+			card->raw_csd[2], card->raw_csd[3]);
+
+		buf = kmalloc(512, GFP_KERNEL);
+		if (buf) {
+			for (i = 0; i < 32; i++) {
+				for (j = 511 - (16 * i); j >= 496 - (16 * i); j--)
+					n += sprintf(buf + n, "%02x", ext_csd[j]);
+				n += sprintf(buf + n, "\n");
+				pr_info("%s: ext_csd_%03d %s",
+					mmc_hostname(card->host), 511 - (16 * i), buf);
+				n = 0;
+			}
+		}
+		if (buf)
+			kfree(buf);
+
+		
+		if (card->cid.manfid == CID_MANFID_SANDISK ||
+		    card->cid.manfid == CID_MANFID_SANDISK_2) {
+			if (card->ext_csd.rev == 6)
+				card->cid.fwrev =
+				ext_csd[EXT_CSD_VENDOR_SPECIFIC_FIELDS_73] & 0x3F;
+			else if (card->ext_csd.rev > 6) { 
+				card->cid.fwrev =
+				ext_csd[EXT_CSD_VENDOR_SPECIFIC_FIELDS_258] - 0x30 ;
+
+				
+				check_fw = kmalloc(16, GFP_KERNEL);
+				if(check_fw) {
+					sprintf(check_fw, "%d%d%d%d%d%d",
+					ext_csd[254]-0x30, ext_csd[255]-0x30,
+					ext_csd[256]-0x30, ext_csd[257]-0x30,
+					ext_csd[258]-0x30, ext_csd[259]-0x30);
+				}
+				if(!strcmp(check_fw, "110224") ||
+					!strcmp(check_fw, "101149")) {
+					card->ext_csd.cmdq_support = 0;
+					card->ext_csd.cmdq_depth = 0;
+					card->ext_csd.barrier_support = 0;
+					card->ext_csd.cache_flush_policy = 0;
+				}
+				pr_info("%s: SanDisk: %s\n", mmc_hostname(card->host),
+					check_fw);
+				if(check_fw)
+					kfree(check_fw);
+			}
+
+		} else if (card->cid.manfid == CID_MANFID_MICRON) {
+			card->cid.fwrev = ext_csd[EXT_CSD_VENDOR_SPECIFIC_FIELDS_258];
+		}
+	}
+}
+
+#define MAX_CMDQ_DEPTH	16
 static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 {
 	int err = 0, idx;
 	unsigned int part_size;
+	u8 q_depth;
 
 	BUG_ON(!card);
 
@@ -663,12 +735,14 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 			mmc_hostname(card->host),
 			card->ext_csd.fw_version);
 		if (card->ext_csd.cmdq_support) {
-			/*
-			 * Queue Depth = N + 1,
-			 * see JEDEC JESD84-B51 section 7.4.19
-			 */
-			card->ext_csd.cmdq_depth =
-				ext_csd[EXT_CSD_CMDQ_DEPTH] + 1;
+			q_depth = ext_csd[EXT_CSD_CMDQ_DEPTH] + 1;
+			if (q_depth > MAX_CMDQ_DEPTH) {
+				pr_info("%s: CMDQ limit depth: %u -> %u\n",
+					mmc_hostname(card->host), q_depth, MAX_CMDQ_DEPTH);
+				card->ext_csd.cmdq_depth = MAX_CMDQ_DEPTH;
+			} else {
+				card->ext_csd.cmdq_depth = q_depth;
+			}
 			pr_info("%s: CMDQ supported: depth: %d\n",
 				mmc_hostname(card->host),
 				card->ext_csd.cmdq_depth);
@@ -690,6 +764,11 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		card->ext_csd.barrier_support = 0;
 		card->ext_csd.cache_flush_policy = 0;
 	}
+
+	card->ext_csd.ffu_mode_op = ext_csd[EXT_CSD_FFU_FEATURES];
+	printk("%s: ext_csd[EXT_CSD_FFU_FEATURES]=%x \n", __func__, ext_csd[EXT_CSD_FFU_FEATURES]);
+
+	htc_mmc_show_cid_ext_csd(card, ext_csd);
 
 out:
 	return err;
@@ -800,6 +879,42 @@ MMC_DEV_ATTR(enhanced_rpmb_supported, "%#x\n",
 		card->ext_csd.enhanced_rpmb_supported);
 MMC_DEV_ATTR(rel_sectors, "%#x\n", card->ext_csd.rel_sectors);
 
+static ssize_t htc_mmc_show_manf_name (struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct mmc_card *card = mmc_dev_to_card(dev);
+	int count = 0;
+
+	switch (card->cid.manfid) {
+	case CID_MANFID_SANDISK:
+	case CID_MANFID_SANDISK_2:
+		count = sprintf(buf, "Sandisk\n");
+		break;
+	case CID_MANFID_TOSHIBA:
+		count = sprintf(buf, "Toshiba\n");
+		break;
+	case CID_MANFID_MICRON:
+	case CID_MANFID_NUMONYX_MICRON:
+		count = sprintf(buf, "Micron\n");
+		break;
+	case CID_MANFID_SAMSUNG:
+		count = sprintf(buf, "Samsung\n");
+		break;
+	case CID_MANFID_HYNIX:
+		count = sprintf(buf, "Hynix\n");
+		break;
+	case CID_MANFID_KINGSTON:
+		count = sprintf(buf, "Kingston\n");
+		break;
+	default:
+		count = sprintf(buf, "Unknown\n");
+	}
+
+	return count;
+}
+DEVICE_ATTR(manf_name, S_IRUGO, htc_mmc_show_manf_name, NULL);
+
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_cid.attr,
 	&dev_attr_csd.attr,
@@ -818,6 +933,7 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_raw_rpmb_size_mult.attr,
 	&dev_attr_enhanced_rpmb_supported.attr,
 	&dev_attr_rel_sectors.attr,
+	&dev_attr_manf_name.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(mmc_std);
@@ -2338,8 +2454,11 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 
 	mmc_claim_host(host);
 
-	if (mmc_card_suspended(host->card))
+	if (mmc_card_suspended(host->card)) {
+		pr_info("%s: %s: device has been suspended\n",
+			mmc_hostname(host), __func__);
 		goto out;
+	}
 
 	if (host->card->cmdq_init) {
 		BUG_ON(host->cmdq_ctx.active_reqs);
@@ -2356,26 +2475,43 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 
 	if (mmc_card_doing_bkops(host->card)) {
 		err = mmc_stop_bkops(host->card);
-		if (err)
+		if (err) {
+			pr_err("%s: %s: fail to stop bkops (%d)\n",
+				mmc_hostname(host), __func__, err);
 			goto out;
+		}
 	}
 
 	if (mmc_card_doing_auto_bkops(host->card)) {
 		err = mmc_set_auto_bkops(host->card, false);
-		if (err)
+		if (err) {
+			pr_err("%s: %s: fail to cancel auto bkops (%d)\n",
+				mmc_hostname(host), __func__, err);
 			goto out;
+		}
 	}
 
 	err = mmc_flush_cache(host->card);
-	if (err)
+	if (err) {
+		pr_err("%s: %s: fail to flush cache (%d)\n",
+			mmc_hostname(host), __func__, err);
 		goto out;
+	}
 
 	if (mmc_can_sleepawake(host)) {
 		memcpy(&host->cached_ios, &host->ios, sizeof(host->cached_ios));
 		mmc_cache_card_ext_csd(host);
 		err = mmc_sleepawake(host, true);
+		if (err) {
+			pr_err("%s: %s: fail to sleep awake (%d)\n",
+				mmc_hostname(host), __func__, err);
+		}
 	} else if (!mmc_host_is_spi(host)) {
 		err = mmc_deselect_cards(host);
+		if (err) {
+			pr_err("%s: %s: fail to deselect card (%d)\n",
+				mmc_hostname(host), __func__, err);
+		}
 	}
 
 	if (!err) {
@@ -2383,8 +2519,8 @@ static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 		mmc_card_set_suspended(host->card);
 	}
 out:
-	/* Kick CMDQ thread to process any requests came in while suspending */
-	if (host->card->cmdq_init)
+	
+	if (!is_suspend && host->card->cmdq_init)
 		wake_up(&host->cmdq_ctx.wait);
 
 	mmc_release_host(host);
@@ -2468,6 +2604,8 @@ static int mmc_suspend(struct mmc_host *host)
 	if (!err) {
 		pm_runtime_disable(&host->card->dev);
 		pm_runtime_set_suspended(&host->card->dev);
+	} else {
+		pr_err("%s: %s: failed, err:%d\n", mmc_hostname(host), __func__, err);
 	}
 
 	trace_mmc_suspend(mmc_hostname(host), err,
@@ -2571,7 +2709,7 @@ static int mmc_runtime_suspend(struct mmc_host *host)
 	if (!(host->caps & MMC_CAP_AGGRESSIVE_PM))
 		return 0;
 
-	err = _mmc_suspend(host, true);
+	err = _mmc_suspend(host, false);
 	if (err)
 		pr_err("%s: error %d doing aggessive suspend\n",
 			mmc_hostname(host), err);

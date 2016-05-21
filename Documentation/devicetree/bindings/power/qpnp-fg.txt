@@ -168,16 +168,29 @@ Parent node optional properties:
 					coulomb count.
 - qcom,fg-therm-delay-us:		The time in microseconds to delay battery
 					thermistor biasing.
-- qcom,esr-pulse-tuning-en:		A boolean property to enable ESR pulse
-					tuning feature. If this is enabled,
-					ESR pulse extraction will be disabled
-					when state of charge (SOC) is less than
-					2%. It will be enabled back when SOC
-					gets above 2%. In addition, for SOC
-					between 2% and 5%, ESR pulse timing
-					settings will be different from default.
-					Once SOC crosses 5%, ESR pulse timings
-					will be restored back to default.
+- qcom,fg-use-vbat-low-empty-soc:	A boolean property to specify whether
+					vbatt-low interrupt is used to handle
+					empty battery condition. If this is
+					not specified, empty battery condition
+					is detected by empty-soc interrupt.
+- qcom,fg-batt-temp-low-limit:		Battery temperature (in decidegC) low
+					limit  which will be used to validate
+					the battery temperature reading from FG.
+					If the battery temperature goes below
+					this limit, last read good temperature
+					will be notified to userspace. If this
+					limit is not specified, then the
+					default limit would be -60C.
+- qcom,fg-batt-temp-high-limit:		Battery temperature (in decidegC) high
+					limit  which will be used to validate
+					the battery temperature reading from FG.
+					If the battery temperature goes above
+					this limit, last read good temperature
+					will be notified to userspace. If this
+					limit is not specified, then the
+					default limit would be 150C.
+- qcom,fg-cc-soc-limit-pct:		Percentage of CC_SOC before resetting
+					FG and restore the full CC_SOC value.
 
 qcom,fg-soc node required properties:
 - reg : offset and length of the PMIC peripheral register map.

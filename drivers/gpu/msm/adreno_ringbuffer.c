@@ -141,6 +141,28 @@ int adreno_ringbuffer_submit_spin(struct adreno_ringbuffer *rb,
 	return adreno_spin_idle(rb->device, timeout);
 }
 
+int adreno_ringbuffer_submit_spin_retry(struct adreno_ringbuffer *rb,
+		struct adreno_submit_time *time, unsigned int timeout,
+		unsigned int retry)
+{
+	int ret = 0;
+	int num_trial = 0;
+
+	adreno_ringbuffer_submit(rb, NULL);
+	do {
+		ret = adreno_spin_idle(rb->device, timeout);
+		if (ret == -ETIMEDOUT) {
+			KGSL_DRV_ERR(rb->device,
+					"hw initialization failed to idle after %d msec\n",
+					(++num_trial)*timeout);
+		}
+		else
+			break;
+	} while (num_trial < retry);
+
+	return ret;
+}
+
 static int
 adreno_ringbuffer_waitspace(struct adreno_ringbuffer *rb,
 				unsigned int numcmds, int wptr_ahead)
@@ -424,14 +446,12 @@ int adreno_ringbuffer_init(struct adreno_device *adreno_dev, bool nopreempt)
 
 static void _adreno_ringbuffer_close(struct adreno_ringbuffer *rb)
 {
-	struct kgsl_device *device = rb->device;
-
-	kgsl_free_global(device, &rb->pagetable_desc);
-	kgsl_free_global(device, &rb->preemption_desc);
+	kgsl_free_global(&rb->pagetable_desc);
+	kgsl_free_global(&rb->preemption_desc);
 
 	memset(&rb->pt_update_desc, 0, sizeof(struct kgsl_memdesc));
 
-	kgsl_free_global(device, &rb->buffer_desc);
+	kgsl_free_global(&rb->buffer_desc);
 	kgsl_del_event_group(&rb->events);
 	memset(rb, 0, sizeof(struct adreno_ringbuffer));
 }

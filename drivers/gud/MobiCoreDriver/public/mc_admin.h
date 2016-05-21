@@ -15,6 +15,8 @@
 #ifndef __MC_ADMIN_IOCTL_H__
 #define __MC_ADMIN_IOCTL_H__
 
+#include <linux/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,32 +37,32 @@ enum {
 #define MC_IOC_MAGIC    'M'
 
 struct mc_admin_request {
-	uint32_t	request_id;	/* Unique request identifier */
-	uint32_t	command;	/* Command to daemon */
-	struct mc_uuid_t uuid;		/* UUID of trustlet, if relevant */
-	uint32_t	is_gp;		/* Whether trustlet is GP */
-	uint32_t	spid;		/* SPID of trustlet, if relevant */
+	__u32		request_id;	
+	__u32		command;	
+	struct mc_uuid_t uuid;		
+	__u32		is_gp;		
+	__u32		spid;		
 };
 
 struct mc_admin_response {
-	uint32_t	request_id;	/* Unique request identifier */
-	uint32_t	error_no;	/* Errno from daemon */
-	uint32_t	spid;		/* SPID of trustlet, if relevant */
-	uint32_t	service_type;	/* Type of trustlet being returned */
-	uint32_t	length;		/* Length of data to get */
-	/* Any data follows */
+	__u32		request_id;	
+	__u32		error_no;	
+	__u32		spid;		
+	__u32		service_type;	
+	__u32		length;		
+	
 };
 
 struct mc_admin_driver_info {
-	/* Version, and something else..*/
-	uint32_t	drv_version;
-	uint32_t	initial_cmd_id;
+	
+	__u32		drv_version;
+	__u32		initial_cmd_id;
 };
 
 struct mc_admin_load_info {
-	uint32_t	spid;		/* SPID of trustlet, if relevant */
-	uint64_t	address;	/* Address of the data */
-	uint32_t	length;		/* Length of data to get */
+	__u32		spid;		
+	__u64		address;	
+	__u32		length;		
 };
 
 #define MC_ADMIN_IO_GET_DRIVER_REQUEST \

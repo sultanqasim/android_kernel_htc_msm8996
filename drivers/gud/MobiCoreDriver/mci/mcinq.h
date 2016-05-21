@@ -21,13 +21,11 @@
 #define MIN_NQ_ELEM 1	/** Minimum notification queue elements */
 #define MAX_NQ_ELEM 64	/** Maximum notification queue elements */
 
-/** \name NQ Length Defines
- * Minimum and maximum notification queue length.
- */
-/** Minimum notification length (in bytes) */
-#define MIN_NQ_LEN (MIN_NQ_ELEM * sizeof(struct notification))
-/** Maximum notification length (in bytes) */
-#define MAX_NQ_LEN (MAX_NQ_ELEM * sizeof(struct notification))
+#define NQ_SIZE(n)   (2 * (sizeof(struct notification_queue_header) \
+			+ (n) * sizeof(struct notification)))
+
+#define MIN_NQ_LEN NQ_SIZE(MIN_NQ_ELEM)
+#define MAX_NQ_LEN NQ_SIZE(MAX_NQ_ELEM)
 
 /** \name Session ID Defines
  * Standard Session IDs.
@@ -39,8 +37,8 @@
 
 /** Notification data structure */
 struct notification {
-	uint32_t	session_id;	/** Session ID */
-	int32_t		payload;	/** Additional notification info */
+	u32	session_id;	
+	s32	payload;	
 };
 
 /** Notification payload codes.
@@ -68,9 +66,9 @@ enum notification_payload {
  * layout as specified in the data structure specification.
  */
 struct notification_queue_header {
-	uint32_t	write_cnt;	/** Write counter */
-	uint32_t	read_cnt;	/** Read counter */
-	uint32_t	queue_size;	/** Queue size */
+	u32	write_cnt;	
+	u32	read_cnt;	
+	u32	queue_size;	
 };
 
 /** Queue struct which defines a queue object.

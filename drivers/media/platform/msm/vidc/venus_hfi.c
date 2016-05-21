@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -852,8 +852,8 @@ static int __vote_buses(struct venus_hfi_device *device,
 	struct vidc_bus_vote_data *new_data = NULL;
 
 	if (!num_data) {
-		dprintk(VIDC_DBG, "No vote data available\n");
-		goto no_data_count;
+		
+		return 0;
 	} else if (!data) {
 		dprintk(VIDC_ERR, "Invalid voting data\n");
 		return -EINVAL;
@@ -866,7 +866,6 @@ static int __vote_buses(struct venus_hfi_device *device,
 		goto err_no_mem;
 	}
 
-no_data_count:
 	kfree(device->bus_vote.data);
 	device->bus_vote.data = new_data;
 	device->bus_vote.data_count = num_data;
@@ -4434,7 +4433,7 @@ static int venus_hfi_get_fw_info(void *dev, struct hal_fw_info *fw_info)
 	struct venus_hfi_device *device = dev;
 	u32 smem_block_size = 0;
 	u8 *smem_table_ptr;
-	char version[VENUS_VERSION_LENGTH];
+	char version[VENUS_VERSION_LENGTH] = {0};
 	const u32 smem_image_index_venus = 14 * 128;
 
 	if (!device || !fw_info) {
@@ -4466,7 +4465,7 @@ static int venus_hfi_get_fw_info(void *dev, struct hal_fw_info *fw_info)
 
 	for (i--; i < VENUS_VERSION_LENGTH && j < VENUS_VERSION_LENGTH; i++)
 		fw_info->version[j++] = version[i];
-	fw_info->version[j] = '\0';
+	fw_info->version[VENUS_VERSION_LENGTH - 1] = '\0';
 
 fail_version_string:
 	dprintk(VIDC_DBG, "F/W version retrieved : %s\n", fw_info->version);

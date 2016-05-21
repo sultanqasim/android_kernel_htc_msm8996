@@ -415,7 +415,7 @@ int msm_create_session(unsigned int session_id, struct video_device *vdev)
 	msm_enqueue(msm_session_q, &session->list);
 	mutex_init(&session->lock);
 	mutex_init(&session->lock_q);
-	mutex_init(&session->close_lock);
+        mutex_init(&session->close_lock);
 	return 0;
 }
 EXPORT_SYMBOL(msm_create_session);
@@ -581,7 +581,7 @@ int msm_destroy_session(unsigned int session_id)
 	msm_remove_session_cmd_ack_q(session);
 	mutex_destroy(&session->lock);
 	mutex_destroy(&session->lock_q);
-	mutex_destroy(&session->close_lock);
+        mutex_destroy(&session->close_lock);
 	msm_delete_entry(msm_session_q, struct msm_session,
 		list, session);
 	buf_mgr_subdev = msm_sd_find("msm_buf_mngr");
@@ -821,7 +821,7 @@ int msm_post_event(struct v4l2_event *event, int timeout)
 
 	if (list_empty_careful(&cmd_ack->command_q.list)) {
 		if (!rc) {
-			pr_err("%s: Timed out\n", __func__);
+			pr_err("[CAM]%s: Timed out\n", __func__);
 			msm_print_event_error(event);
 			mutex_unlock(&session->lock);
 			return -ETIMEDOUT;

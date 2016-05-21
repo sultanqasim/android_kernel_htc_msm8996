@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -160,7 +160,6 @@
 #define IBB_MODULE_RDY_EN		BIT(7)
 
 /* REG_IBB_ENABLE_CTL */
-#define IBB_ENABLE_CTL_MASK		(BIT(7) | BIT(6))
 #define IBB_ENABLE_CTL_SWIRE_RDY	BIT(6)
 #define IBB_ENABLE_CTL_MODULE_EN	BIT(7)
 
@@ -242,17 +241,6 @@ enum qpnp_labibb_mode {
 	QPNP_LABIBB_LCD_MODE,
 	QPNP_LABIBB_AMOLED_MODE,
 	QPNP_LABIBB_MAX_MODE,
-};
-
-/**
- * IBB_SW_CONTROL_EN: Specifies IBB is enabled through software.
- * IBB_SW_CONTROL_DIS: Specifies IBB is disabled through software.
- * IBB_HW_CONTROL: Specifies IBB is controlled through SWIRE (hardware).
- */
-enum ibb_mode {
-	IBB_SW_CONTROL_EN,
-	IBB_SW_CONTROL_DIS,
-	IBB_HW_CONTROL,
 };
 
 static const int ibb_discharge_resistor_plan[] = {
@@ -618,29 +606,6 @@ static int qpnp_labibb_get_matching_idx(const char *val)
 	return -EINVAL;
 }
 
-static int qpnp_ibb_set_mode(struct qpnp_labibb *labibb, enum ibb_mode mode)
-{
-	int rc;
-	u8 val;
-
-	if (mode == IBB_SW_CONTROL_EN)
-		val = IBB_ENABLE_CTL_MODULE_EN;
-	else if (mode == IBB_HW_CONTROL)
-		val = IBB_ENABLE_CTL_SWIRE_RDY;
-	else if (mode == IBB_SW_CONTROL_DIS)
-		val = 0;
-	else
-		return -EINVAL;
-
-	rc = qpnp_labibb_masked_write(labibb,
-		labibb->ibb_base + REG_IBB_ENABLE_CTL,
-		IBB_ENABLE_CTL_MASK, val);
-	if (rc)
-		pr_err("Unable to configure IBB_ENABLE_CTL rc=%d\n", rc);
-
-	return rc;
-}
-
 static int qpnp_lab_dt_init(struct qpnp_labibb *labibb,
 				struct device_node *of_node)
 {
@@ -882,7 +847,9 @@ static int qpnp_lab_dt_init(struct qpnp_labibb *labibb,
 	}
 
 	if (labibb->swire_control) {
-		rc = qpnp_ibb_set_mode(labibb, IBB_HW_CONTROL);
+		val = IBB_ENABLE_CTL_SWIRE_RDY;
+		rc = qpnp_labibb_write(labibb,
+			labibb->ibb_base + REG_IBB_ENABLE_CTL, &val, 1);
 		if (rc)
 			pr_err("Unable to set SWIRE_RDY rc=%d\n", rc);
 	}
@@ -1059,9 +1026,12 @@ static int qpnp_labibb_regulator_ttw_mode_enter(struct qpnp_labibb *labibb)
 		return rc;
 	}
 
-	rc = qpnp_ibb_set_mode(labibb, IBB_HW_CONTROL);
+	val = IBB_ENABLE_CTL_SWIRE_RDY;
+	rc = qpnp_labibb_write(labibb, labibb->ibb_base + REG_IBB_ENABLE_CTL,
+		&val, 1);
 	if (rc) {
-		pr_err("Unable to set SWIRE_RDY rc = %d\n", rc);
+		pr_err("qpnp_labibb_write register %x failed rc = %d\n",
+				REG_IBB_ENABLE_CTL, rc);
 		return rc;
 	}
 	labibb->in_ttw_mode = true;
@@ -1112,6 +1082,16 @@ static int qpnp_labibb_regulator_ttw_mode_exit(struct qpnp_labibb *labibb)
 		return rc;
 	}
 
+	val = 0;
+	rc = qpnp_labibb_write(labibb, labibb->ibb_base + REG_IBB_ENABLE_CTL,
+		&val, 1);
+
+	if (rc) {
+		pr_err("qpnp_labibb_write register %x failed rc = %d\n",
+				REG_IBB_ENABLE_CTL, rc);
+		return rc;
+	}
+
 	labibb->in_ttw_mode = false;
 	return rc;
 }
@@ -1119,7 +1099,7 @@ static int qpnp_labibb_regulator_ttw_mode_exit(struct qpnp_labibb *labibb)
 static int qpnp_labibb_regulator_enable(struct qpnp_labibb *labibb)
 {
 	int rc;
-	u8 val;
+	u8 val = IBB_ENABLE_CTL_MODULE_EN;
 	int dly;
 	int retries;
 	bool enabled = false;
@@ -1133,9 +1113,12 @@ static int qpnp_labibb_regulator_enable(struct qpnp_labibb *labibb)
 		}
 	}
 
-	rc = qpnp_ibb_set_mode(labibb, IBB_SW_CONTROL_EN);
+	rc = qpnp_labibb_write(labibb, labibb->ibb_base + REG_IBB_ENABLE_CTL,
+		&val, 1);
+
 	if (rc) {
-		pr_err("Unable to set IBB_MODULE_EN rc = %d\n", rc);
+		pr_err("write register %x failed rc = %d\n",
+			REG_IBB_ENABLE_CTL, rc);
 		return rc;
 	}
 
@@ -1191,11 +1174,12 @@ static int qpnp_labibb_regulator_enable(struct qpnp_labibb *labibb)
 
 	return 0;
 err_out:
-	rc = qpnp_ibb_set_mode(labibb, IBB_SW_CONTROL_DIS);
-	if (rc) {
-		pr_err("Unable to set IBB_MODULE_EN rc = %d\n", rc);
-		return rc;
-	}
+	val = 0;
+	rc = qpnp_labibb_write(labibb, labibb->ibb_base + REG_IBB_ENABLE_CTL,
+		&val, 1);
+	if (rc)
+		pr_err("write register %x failed rc = %d\n",
+				REG_IBB_ENABLE_CTL, rc);
 	return -EINVAL;
 }
 
@@ -1207,28 +1191,12 @@ static int qpnp_labibb_regulator_disable(struct qpnp_labibb *labibb)
 	int retries;
 	bool disabled = false;
 
-	/*
-	 * When TTW mode is enabled and LABIBB regulators are disabled, it is
-	 * recommended not to disable IBB through IBB_ENABLE_CTL when switching
-	 * to SWIRE control on entering TTW mode. Hence, just enter TTW mode
-	 * and mark the regulators disabled. When we exit TTW mode, normal
-	 * mode settings will be restored anyways and regulators will be
-	 * enabled as before.
-	 */
-	if (labibb->ttw_en && !labibb->in_ttw_mode) {
-		rc = qpnp_labibb_regulator_ttw_mode_enter(labibb);
-		if (rc) {
-			pr_err("Error in entering TTW mode rc = %d\n", rc);
-			return rc;
-		}
-		labibb->lab_vreg.vreg_enabled = 0;
-		labibb->ibb_vreg.vreg_enabled = 0;
-		return 0;
-	}
-
-	rc = qpnp_ibb_set_mode(labibb, IBB_SW_CONTROL_DIS);
+	val = 0;
+	rc = qpnp_labibb_write(labibb,
+			labibb->ibb_base + REG_IBB_ENABLE_CTL, &val, 1);
 	if (rc) {
-		pr_err("Unable to set IBB_MODULE_EN rc = %d\n", rc);
+		pr_err("write register %x failed rc = %d\n",
+			REG_IBB_ENABLE_CTL, rc);
 		return rc;
 	}
 
@@ -1259,6 +1227,13 @@ static int qpnp_labibb_regulator_disable(struct qpnp_labibb *labibb)
 	labibb->lab_vreg.vreg_enabled = 0;
 	labibb->ibb_vreg.vreg_enabled = 0;
 
+	if (labibb->ttw_en && !labibb->in_ttw_mode) {
+		rc = qpnp_labibb_regulator_ttw_mode_enter(labibb);
+		if (rc) {
+			pr_err("Error in entering TTW mode rc = %d\n", rc);
+			return rc;
+		}
+	}
 	return 0;
 }
 
@@ -1963,9 +1938,12 @@ static int qpnp_ibb_regulator_enable(struct regulator_dev *rdev)
 		if (labibb->mode != QPNP_LABIBB_STANDALONE_MODE)
 			return qpnp_labibb_regulator_enable(labibb);
 
-		rc = qpnp_ibb_set_mode(labibb, IBB_SW_CONTROL_EN);
+		val = IBB_ENABLE_CTL_MODULE_EN;
+		rc = qpnp_labibb_write(labibb,
+			labibb->ibb_base + REG_IBB_ENABLE_CTL, &val, 1);
 		if (rc) {
-			pr_err("Unable to set IBB_MODULE_EN rc = %d\n", rc);
+			pr_err("qpnp_ibb_regulator_enable write register %x failed rc = %d\n",
+				REG_IBB_ENABLE_CTL, rc);
 			return rc;
 		}
 
@@ -1992,6 +1970,7 @@ static int qpnp_ibb_regulator_enable(struct regulator_dev *rdev)
 static int qpnp_ibb_regulator_disable(struct regulator_dev *rdev)
 {
 	int rc;
+	u8 val;
 	struct qpnp_labibb *labibb  = rdev_get_drvdata(rdev);
 
 	if (labibb->ibb_vreg.vreg_enabled && !labibb->swire_control) {
@@ -1999,9 +1978,12 @@ static int qpnp_ibb_regulator_disable(struct regulator_dev *rdev)
 		if (labibb->mode != QPNP_LABIBB_STANDALONE_MODE)
 			return qpnp_labibb_regulator_disable(labibb);
 
-		rc = qpnp_ibb_set_mode(labibb, IBB_SW_CONTROL_DIS);
+		val = 0;
+		rc = qpnp_labibb_write(labibb, labibb->ibb_base +
+			REG_IBB_ENABLE_CTL, &val, 1);
 		if (rc) {
-			pr_err("Unable to set IBB_MODULE_EN rc = %d\n", rc);
+			pr_err("qpnp_ibb_regulator_enable write register %x failed rc = %d\n",
+				REG_IBB_ENABLE_CTL, rc);
 			return rc;
 		}
 

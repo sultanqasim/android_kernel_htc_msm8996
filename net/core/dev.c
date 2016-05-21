@@ -344,27 +344,7 @@ static inline void netdev_set_addr_lockdep_class(struct net_device *dev)
 }
 #endif
 
-/*******************************************************************************
 
-		Protocol management and registration routines
-
-*******************************************************************************/
-
-/*
- *	Add a protocol ID to the list. Now that the input handler is
- *	smarter we can dispense with all the messy stuff that used to be
- *	here.
- *
- *	BEWARE!!! Protocol handlers, mangling input packets,
- *	MUST BE last in hash buckets and checking protocol handlers
- *	MUST start from promiscuous ptype_all chain in net_bh.
- *	It is true now, do not change it.
- *	Explanation follows: if protocol handler, mangling packet, will
- *	be the first on list, it is not able to sense, that packet
- *	is cloned and should be copied-on-write, so that it will
- *	change it and subsequent readers will get broken packet.
- *							--ANK (980803)
- */
 
 static inline struct list_head *ptype_head(const struct packet_type *pt)
 {
@@ -525,13 +505,7 @@ void dev_remove_offload(struct packet_offload *po)
 }
 EXPORT_SYMBOL(dev_remove_offload);
 
-/******************************************************************************
 
-		      Device Boot-time Settings Routines
-
-*******************************************************************************/
-
-/* Boot time configuration table */
 static struct netdev_boot_setup dev_boot_setup[NETDEV_BOOT_SETUP_MAX];
 
 /**
@@ -4266,7 +4240,7 @@ static void napi_reuse_skb(struct napi_struct *napi, struct sk_buff *skb)
 	skb->encapsulation = 0;
 	skb_shinfo(skb)->gso_type = 0;
 	skb->truesize = SKB_TRUESIZE(skb_end_offset(skb));
-
+    BUG_ON(skb->truesize == 0x6B6B6B6A);
 	napi->skb = skb;
 }
 
@@ -4402,15 +4376,9 @@ static void net_rps_action_and_irq_enable(struct softnet_data *sd)
 		while (remsd) {
 			struct softnet_data *next = remsd->rps_ipi_next;
 
-			if (cpu_online(remsd->cpu)) {
+			if (cpu_online(remsd->cpu))
 				smp_call_function_single_async(remsd->cpu,
 							   &remsd->csd);
-			} else {
-				pr_err("%s() cpu offline\n", __func__);
-				rps_lock(remsd);
-				remsd->backlog.state = 0;
-				rps_unlock(remsd);
-			}
 			remsd = next;
 		}
 	} else
@@ -4443,7 +4411,8 @@ static int process_backlog(struct napi_struct *napi, int quota)
 			local_irq_disable();
 			input_queue_head_incr(sd);
 			if (++work >= quota) {
-				goto state_changed;
+				local_irq_enable();
+				return work;
 			}
 		}
 
@@ -4461,17 +4430,14 @@ static int process_backlog(struct napi_struct *napi, int quota)
 			napi->state = 0;
 			rps_unlock(sd);
 
-			goto state_changed;
+			break;
 		}
 
 		skb_queue_splice_tail_init(&sd->input_pkt_queue,
 					   &sd->process_queue);
 		rps_unlock(sd);
 	}
-state_changed:
 	local_irq_enable();
-	napi_gro_flush(napi, false);
-	sd->current_napi = NULL;
 
 	return work;
 }
@@ -4494,14 +4460,11 @@ EXPORT_SYMBOL(__napi_schedule);
 
 void __napi_complete(struct napi_struct *n)
 {
-	struct softnet_data *sd = &__get_cpu_var(softnet_data);
-
 	BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
 	BUG_ON(n->gro_list);
 
 	list_del(&n->poll_list);
 	smp_mb__before_atomic();
-	sd->current_napi = NULL;
 	clear_bit(NAPI_STATE_SCHED, &n->state);
 }
 EXPORT_SYMBOL(__napi_complete);
@@ -4609,14 +4572,6 @@ void netif_napi_del(struct napi_struct *napi)
 }
 EXPORT_SYMBOL(netif_napi_del);
 
-struct napi_struct *get_current_napi_context(void)
-{
-	struct softnet_data *sd = &__get_cpu_var(softnet_data);
-
-	return sd->current_napi;
-}
-EXPORT_SYMBOL(get_current_napi_context);
-
 static void net_rx_action(struct softirq_action *h)
 {
 	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
@@ -4658,7 +4613,6 @@ static void net_rx_action(struct softirq_action *h)
 		 */
 		work = 0;
 		if (test_bit(NAPI_STATE_SCHED, &n->state)) {
-			sd->current_napi = n;
 			work = n->poll(n, weight);
 			trace_napi_poll(n);
 		}

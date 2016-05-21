@@ -76,11 +76,8 @@ extern void update_cpu_load_active(struct rq *this_rq);
 #define NICE_0_LOAD		SCHED_LOAD_SCALE
 #define NICE_0_SHIFT		SCHED_LOAD_SHIFT
 
-/*
- * Single value that decides SCHED_DEADLINE internal math precision.
- * 10 -> just above 1us
- * 9  -> just above 0.5us
- */
+#define SCHED_LOAD_WINDOW_SIZE  10
+
 #define DL_SCALE (10)
 
 /*
@@ -696,6 +693,13 @@ struct rq {
 	u64 irqload_ts;
 	unsigned int static_cpu_pwr_cost;
 	struct task_struct *ed_task;
+
+	u64 load_history[SCHED_LOAD_WINDOW_SIZE];
+	int load_avg;
+	int budget;
+	int load_history_index;
+	u64 load_last_update_timestamp;
+
 
 #ifdef CONFIG_SCHED_FREQ_INPUT
 	unsigned int old_busy_time;
@@ -1509,13 +1513,9 @@ static inline void finish_lock_switch(struct rq *rq, struct task_struct *prev)
 	raw_spin_unlock_irq(&rq->lock);
 }
 
-/*
- * wake flags
- */
-#define WF_SYNC		0x01		/* waker goes to sleep after wakeup */
-#define WF_FORK		0x02		/* child wakeup after fork */
-#define WF_MIGRATED	0x4		/* internal use, task got migrated */
-#define WF_NO_NOTIFIER	0x08		/* do not notify governor */
+#define WF_SYNC		0x01		
+#define WF_FORK		0x02		
+#define WF_MIGRATED	0x4		
 
 /*
  * To aid in avoiding the subversion of "niceness" due to uneven distribution

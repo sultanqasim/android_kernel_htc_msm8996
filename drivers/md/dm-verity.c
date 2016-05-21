@@ -261,6 +261,9 @@ static int verity_verify_level(struct dm_verity_io *io, sector_t block,
 	int r;
 	sector_t hash_block;
 	unsigned offset;
+	u8 *want_digest;
+	unsigned int real_value;
+	unsigned int want_value;
 
 	verity_hash_at_level(v, block, level, &hash_block, &offset);
 
@@ -319,6 +322,13 @@ static int verity_verify_level(struct dm_verity_io *io, sector_t block,
 		if (unlikely(memcmp(result, io_want_digest(v, io), v->digest_size))) {
 			v->hash_failed = 1;
 
+			if (v->digest_size == 32) {
+				want_digest = io_want_digest(v, io);
+				real_value = *result | *(result + 1) << 8 |  *(result + 2) << 16 | *(result + 3) << 24;
+				want_value = *want_digest | *(want_digest + 1) << 8 |  *(want_digest + 2) << 16 | *(want_digest + 3) << 24;
+				DMERR("%s:io_real_digest=%08x io_want_digest=%08x", __func__, real_value, want_value);
+			}
+
 			if (verity_handle_err(v, DM_VERITY_BLOCK_TYPE_METADATA,
 					      hash_block)) {
 				r = -EIO;
@@ -357,6 +367,9 @@ static int verity_verify_io(struct dm_verity_io *io)
 		u8 *result;
 		int r;
 		unsigned todo;
+		u8 *want_digest;
+		unsigned int real_value;
+		unsigned int want_value;
 
 		if (likely(v->levels)) {
 			/*
@@ -434,8 +447,16 @@ test_block_hash:
 			DMERR("crypto_shash_final failed: %d", r);
 			return r;
 		}
+
 		if (unlikely(memcmp(result, io_want_digest(v, io), v->digest_size))) {
 			v->hash_failed = 1;
+
+			if (v->digest_size == 32) {
+				want_digest = io_want_digest(v, io);
+				real_value = *result | *(result + 1) << 8 |  *(result + 2) << 16 | *(result + 3) << 24;
+				want_value = *want_digest | *(want_digest + 1) << 8 |  *(want_digest + 2) << 16 | *(want_digest + 3) << 24;
+				DMERR("%s:io_real_digest=%08x io_want_digest=%08x", __func__,real_value , want_value);
+			}
 
 			if (verity_handle_err(v, DM_VERITY_BLOCK_TYPE_DATA,
 					      io->block + b))

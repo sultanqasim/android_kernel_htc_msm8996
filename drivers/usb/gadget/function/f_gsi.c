@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,15 +17,15 @@
 #include <linux/usb/f_gsi.h>
 #include "rndis.h"
 
-static unsigned int gsi_in_aggr_size;
-module_param(gsi_in_aggr_size, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(gsi_in_aggr_size,
-		"Aggr size of bus transfer to host");
+static unsigned int dl_aggr_size = GSI_IN_BUFF_SIZE;
+module_param(dl_aggr_size, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(dl_aggr_size,
+		"Max size of bus transfer to host");
 
-static unsigned int gsi_out_aggr_size;
-module_param(gsi_out_aggr_size, uint, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(gsi_out_aggr_size,
-		"Aggr size of bus transfer to device");
+static unsigned int ul_aggr_size = GSI_OUT_BUFF_SIZE;
+module_param(ul_aggr_size, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(ul_aggr_size,
+		"Max size of bus transfer to device");
 
 static unsigned int num_in_bufs = GSI_NUM_IN_BUFFERS;
 module_param(num_in_bufs, uint, S_IRUGO | S_IWUSR);
@@ -404,112 +404,104 @@ static int ipa_connect_channels(struct gsi_data_port *d_port)
 {
 	int ret;
 	struct f_gsi *gsi = d_port_to_gsi(d_port);
-	struct ipa_usb_xdci_chan_params *in_params =
-				&d_port->ipa_in_channel_params;
-	struct ipa_usb_xdci_chan_params *out_params =
-				&d_port->ipa_out_channel_params;
-	struct ipa_usb_xdci_connect_params *conn_params =
-				&d_port->ipa_conn_pms;
+	struct gsi_data_port *dport;
 	struct usb_composite_dev *cdev = gsi->function.config->cdev;
 	struct gsi_channel_info gsi_channel_info;
 	struct ipa_req_chan_out_params ipa_in_channel_out_params;
 	struct ipa_req_chan_out_params ipa_out_channel_out_params;
 
-	usb_gsi_ep_op(d_port->in_ep, &d_port->in_request,
+	usb_gsi_ep_op(gsi->d_port.in_ep, &gsi->d_port.in_request,
 		GSI_EP_OP_PREPARE_TRBS);
-	usb_gsi_ep_op(d_port->in_ep, &d_port->in_request,
+	usb_gsi_ep_op(gsi->d_port.in_ep, &gsi->d_port.in_request,
 			GSI_EP_OP_STARTXFER);
-	d_port->in_xfer_rsc_index = usb_gsi_ep_op(d_port->in_ep, NULL,
+	gsi->d_port.in_xfer_rsc_index = usb_gsi_ep_op(gsi->d_port.in_ep, NULL,
 			GSI_EP_OP_GET_XFER_IDX);
 
-	memset(in_params, 0x0, sizeof(*in_params));
-	gsi_channel_info.ch_req = &d_port->in_request;
-	usb_gsi_ep_op(d_port->in_ep, (void *)&gsi_channel_info,
+	memset(&gsi->d_port.ipa_in_channel_params, 0x0,
+			sizeof(gsi->d_port.ipa_in_channel_params));
+	gsi_channel_info.ch_req = &gsi->d_port.in_request;
+	usb_gsi_ep_op(gsi->d_port.in_ep, (void *)&gsi_channel_info,
 			GSI_EP_OP_GET_CH_INFO);
-	in_params->client =
-		(gsi->prot_id != IPA_USB_DIAG) ? IPA_CLIENT_USB_CONS :
-						IPA_CLIENT_USB_DPL_CONS;
-	in_params->ipa_ep_cfg.mode.mode = IPA_BASIC;
-	in_params->teth_prot = gsi->prot_id;
-	in_params->gevntcount_low_addr =
+	gsi->d_port.ipa_in_channel_params.client =
+	(gsi->prot_id != IPA_USB_DIAG) ? IPA_CLIENT_USB_CONS :
+					IPA_CLIENT_USB_DPL_CONS;
+	gsi->d_port.ipa_in_channel_params.ipa_ep_cfg.mode.mode = IPA_BASIC;
+	gsi->d_port.ipa_in_channel_params.teth_prot = gsi->prot_id;
+	gsi->d_port.ipa_in_channel_params.gevntcount_low_addr =
 		gsi_channel_info.gevntcount_low_addr;
-	in_params->gevntcount_hi_addr =
+	gsi->d_port.ipa_in_channel_params.gevntcount_hi_addr =
 		gsi_channel_info.gevntcount_hi_addr;
-	in_params->dir = GSI_CHAN_DIR_FROM_GSI;
-	in_params->xfer_ring_len = gsi_channel_info.xfer_ring_len;
-	in_params->xfer_ring_base_addr = gsi_channel_info.xfer_ring_base_addr;
-	in_params->xfer_scratch.last_trb_addr =
-		d_port->in_last_trb_addr = gsi_channel_info.last_trb_addr;
-	in_params->xfer_scratch.const_buffer_size =
+	gsi->d_port.ipa_in_channel_params.dir = GSI_CHAN_DIR_FROM_GSI;
+	gsi->d_port.ipa_in_channel_params.xfer_ring_len =
+		gsi_channel_info.xfer_ring_len;
+	gsi->d_port.ipa_in_channel_params.xfer_ring_base_addr =
+		gsi_channel_info.xfer_ring_base_addr;
+	gsi->d_port.ipa_in_channel_params.xfer_scratch.last_trb_addr =
+		gsi->d_port.in_last_trb_addr = gsi_channel_info.last_trb_addr;
+	gsi->d_port.ipa_in_channel_params.xfer_scratch.const_buffer_size =
 		gsi_channel_info.const_buffer_size;
-	in_params->xfer_scratch.depcmd_low_addr =
+	gsi->d_port.ipa_in_channel_params.xfer_scratch.depcmd_low_addr =
 		gsi_channel_info.depcmd_low_addr;
-	in_params->xfer_scratch.depcmd_hi_addr =
+	gsi->d_port.ipa_in_channel_params.xfer_scratch.depcmd_hi_addr =
 		gsi_channel_info.depcmd_hi_addr;
 
-	if (d_port->out_ep) {
-		usb_gsi_ep_op(d_port->out_ep, &d_port->out_request,
+	if (gsi->d_port.out_ep) {
+		dport = &gsi->d_port;
+		usb_gsi_ep_op(gsi->d_port.out_ep, &gsi->d_port.out_request,
 			GSI_EP_OP_PREPARE_TRBS);
-		usb_gsi_ep_op(d_port->out_ep, &d_port->out_request,
+		usb_gsi_ep_op(gsi->d_port.out_ep, &gsi->d_port.out_request,
 				GSI_EP_OP_STARTXFER);
-		d_port->out_xfer_rsc_index =
-			usb_gsi_ep_op(d_port->out_ep,
+		gsi->d_port.out_xfer_rsc_index =
+			usb_gsi_ep_op(gsi->d_port.out_ep,
 				NULL, GSI_EP_OP_GET_XFER_IDX);
-		memset(out_params, 0x0, sizeof(*out_params));
-		gsi_channel_info.ch_req = &d_port->out_request;
-		usb_gsi_ep_op(d_port->out_ep, (void *)&gsi_channel_info,
+		memset(&gsi->d_port.ipa_out_channel_params, 0x0,
+				sizeof(gsi->d_port.ipa_out_channel_params));
+		gsi_channel_info.ch_req = &gsi->d_port.out_request;
+		usb_gsi_ep_op(gsi->d_port.out_ep, (void *)&gsi_channel_info,
 				GSI_EP_OP_GET_CH_INFO);
 
-		out_params->client = IPA_CLIENT_USB_PROD;
-		out_params->ipa_ep_cfg.mode.mode = IPA_BASIC;
-		out_params->teth_prot = gsi->prot_id;
-		out_params->gevntcount_low_addr =
+		dport->ipa_out_channel_params.client = IPA_CLIENT_USB_PROD;
+		dport->ipa_out_channel_params.ipa_ep_cfg.mode.mode =
+								IPA_BASIC;
+		dport->ipa_out_channel_params.teth_prot = gsi->prot_id;
+		dport->ipa_out_channel_params.gevntcount_low_addr =
 			gsi_channel_info.gevntcount_low_addr;
-		out_params->gevntcount_hi_addr =
+		dport->ipa_out_channel_params.gevntcount_hi_addr =
 			gsi_channel_info.gevntcount_hi_addr;
-		out_params->dir = GSI_CHAN_DIR_TO_GSI;
-		out_params->xfer_ring_len =
+		dport->ipa_out_channel_params.dir = GSI_CHAN_DIR_TO_GSI;
+		dport->ipa_out_channel_params.xfer_ring_len =
 			gsi_channel_info.xfer_ring_len;
-		out_params->xfer_ring_base_addr =
+		dport->ipa_out_channel_params.xfer_ring_base_addr =
 			gsi_channel_info.xfer_ring_base_addr;
-		out_params->xfer_scratch.last_trb_addr =
+		dport->ipa_out_channel_params.xfer_scratch.last_trb_addr =
 			gsi_channel_info.last_trb_addr;
-		out_params->xfer_scratch.const_buffer_size =
+		dport->ipa_out_channel_params.xfer_scratch.const_buffer_size =
 			gsi_channel_info.const_buffer_size;
-		out_params->xfer_scratch.depcmd_low_addr =
+		dport->ipa_out_channel_params.xfer_scratch.depcmd_low_addr =
 			gsi_channel_info.depcmd_low_addr;
-		out_params->xfer_scratch.depcmd_hi_addr =
+		dport->ipa_out_channel_params.xfer_scratch.depcmd_hi_addr =
 			gsi_channel_info.depcmd_hi_addr;
 	}
 
 	/* Populate connection params */
-	conn_params->max_pkt_size =
+	gsi->d_port.ipa_conn_pms.max_pkt_size =
 		(cdev->gadget->speed == USB_SPEED_SUPER) ?
 		IPA_USB_SUPER_SPEED_1024B : IPA_USB_HIGH_SPEED_512B;
-	conn_params->ipa_to_usb_xferrscidx =
-			d_port->in_xfer_rsc_index;
-	conn_params->usb_to_ipa_xferrscidx =
-			d_port->out_xfer_rsc_index;
-	conn_params->usb_to_ipa_xferrscidx_valid =
-			(gsi->prot_id != IPA_USB_DIAG) ? true : false;
-	conn_params->ipa_to_usb_xferrscidx_valid = true;
-	conn_params->teth_prot = gsi->prot_id;
-	conn_params->teth_prot_params.max_xfer_size_bytes_to_dev = 23700;
-	if (gsi_out_aggr_size)
-		conn_params->teth_prot_params.max_xfer_size_bytes_to_dev
-				= gsi_out_aggr_size;
-	else
-		conn_params->teth_prot_params.max_xfer_size_bytes_to_dev
-				= d_port->out_aggr_size;
-	if (gsi_in_aggr_size)
-		conn_params->teth_prot_params.max_xfer_size_bytes_to_host
-					= gsi_in_aggr_size;
-	else
-		conn_params->teth_prot_params.max_xfer_size_bytes_to_host
-					= d_port->in_aggr_size;
-	conn_params->teth_prot_params.max_packet_number_to_dev =
+	gsi->d_port.ipa_conn_pms.ipa_to_usb_xferrscidx =
+			gsi->d_port.in_xfer_rsc_index;
+	gsi->d_port.ipa_conn_pms.usb_to_ipa_xferrscidx =
+			gsi->d_port.out_xfer_rsc_index;
+	gsi->d_port.ipa_conn_pms.usb_to_ipa_xferrscidx_valid =
+	(gsi->prot_id != IPA_USB_DIAG) ? true : false;
+	gsi->d_port.ipa_conn_pms.ipa_to_usb_xferrscidx_valid = true;
+	gsi->d_port.ipa_conn_pms.teth_prot = gsi->prot_id;
+	gsi->d_port.ipa_conn_pms.teth_prot_params.max_xfer_size_bytes_to_dev =
+		23700;
+	gsi->d_port.ipa_conn_pms.teth_prot_params.max_xfer_size_bytes_to_host =
+		GSI_IN_BUFF_SIZE;
+	gsi->d_port.ipa_conn_pms.teth_prot_params.max_packet_number_to_dev =
 		DEFAULT_MAX_PKT_PER_XFER;
-	conn_params->max_supported_bandwidth_mbps =
+	gsi->d_port.ipa_conn_pms.max_supported_bandwidth_mbps =
 		(cdev->gadget->speed == USB_SPEED_SUPER) ? 3600 : 400;
 
 	memset(&ipa_in_channel_out_params, 0x0,
@@ -517,10 +509,11 @@ static int ipa_connect_channels(struct gsi_data_port *d_port)
 	memset(&ipa_out_channel_out_params, 0x0,
 				sizeof(ipa_out_channel_out_params));
 
-	ret = ipa_usb_xdci_connect(out_params, in_params,
+	ret = ipa_usb_xdci_connect(&gsi->d_port.ipa_out_channel_params,
+					&gsi->d_port.ipa_in_channel_params,
 					&ipa_out_channel_out_params,
 					&ipa_in_channel_out_params,
-					conn_params);
+					&gsi->d_port.ipa_conn_pms);
 	if (ret) {
 		pr_err("%s: IPA Connect failed (%d)", __func__, ret);
 		return ret;
@@ -536,18 +529,18 @@ static int ipa_connect_channels(struct gsi_data_port *d_port)
 	pr_debug("%s: Returned params for OUT channel DBL ADD (%x)\n", __func__,
 			ipa_out_channel_out_params.db_reg_phs_addr_lsb);
 
-	d_port->in_channel_handle = ipa_in_channel_out_params.clnt_hdl;
-	d_port->in_db_reg_phs_addr_lsb =
+	gsi->d_port.in_channel_handle = ipa_in_channel_out_params.clnt_hdl;
+	gsi->d_port.in_db_reg_phs_addr_lsb =
 		ipa_in_channel_out_params.db_reg_phs_addr_lsb;
-	d_port->in_db_reg_phs_addr_msb =
+	gsi->d_port.in_db_reg_phs_addr_msb =
 		ipa_in_channel_out_params.db_reg_phs_addr_msb;
 
 	if (gsi->prot_id != IPA_USB_DIAG) {
-		d_port->out_channel_handle =
+		gsi->d_port.out_channel_handle =
 			ipa_out_channel_out_params.clnt_hdl;
-		d_port->out_db_reg_phs_addr_lsb =
+		gsi->d_port.out_db_reg_phs_addr_lsb =
 			ipa_out_channel_out_params.db_reg_phs_addr_lsb;
-		d_port->out_db_reg_phs_addr_msb =
+		gsi->d_port.out_db_reg_phs_addr_msb =
 			ipa_out_channel_out_params.db_reg_phs_addr_msb;
 	}
 	return ret;
@@ -558,8 +551,6 @@ static void ipa_data_path_enable(struct gsi_data_port *d_port)
 	struct f_gsi *gsi = d_port_to_gsi(d_port);
 	struct usb_gsi_request req;
 	u64 dbl_register_addr;
-	bool block_db = false;
-
 
 	pr_debug("in_db_reg_phs_addr_lsb = (%x)",
 			gsi->d_port.in_db_reg_phs_addr_lsb);
@@ -577,10 +568,6 @@ static void ipa_data_path_enable(struct gsi_data_port *d_port)
 		usb_gsi_ep_op(gsi->d_port.out_ep, &gsi->d_port.out_request,
 				GSI_EP_OP_ENABLE_GSI);
 	}
-
-	/* Unblock doorbell to GSI */
-	usb_gsi_ep_op(d_port->in_ep, (void *)&block_db,
-				GSI_EP_OP_SET_CLR_BLOCK_DBL);
 
 	dbl_register_addr = gsi->d_port.in_db_reg_phs_addr_msb;
 	dbl_register_addr = dbl_register_addr << 32;
@@ -602,15 +589,8 @@ static void ipa_data_path_enable(struct gsi_data_port *d_port)
 static void ipa_disconnect_handler(struct gsi_data_port *d_port)
 {
 	struct f_gsi *gsi = d_port_to_gsi(d_port);
-	bool block_db = true;
 
 	pr_debug("%s: EP Disable for data", __func__);
-
-	/* Block doorbell to GSI to avoid USB wrapper from
-	 * ringing doorbell in case IPA clocks are OFF
-	 */
-	usb_gsi_ep_op(d_port->in_ep, (void *)&block_db,
-				GSI_EP_OP_SET_CLR_BLOCK_DBL);
 
 	usb_ep_disable(gsi->d_port.in_ep);
 
@@ -784,7 +764,7 @@ static void ipa_work_handler(struct work_struct *w)
 				pr_debug("%s: STATE DISCONNECTED", __func__);
 				break;
 			}
-			ret = ipa_suspend_work_handler(d_port);
+			ipa_suspend_work_handler(d_port);
 			if (!ret)
 				usb_gadget_autopm_put_async(d_port->gadget);
 		} else if (event == EVT_CONNECTED) {
@@ -2491,11 +2471,9 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 		info.fs_desc_hdr = gsi_eth_fs_function;
 		info.hs_desc_hdr = gsi_eth_hs_function;
 		info.ss_desc_hdr = gsi_eth_ss_function;
-		info.in_req_buf_len = GSI_IN_BUFF_SIZE;
-		gsi->d_port.in_aggr_size = GSI_IN_RNDIS_AGGR_SIZE;
+		info.in_req_buf_len = dl_aggr_size;
 		info.in_req_num_buf = num_in_bufs;
-		gsi->d_port.out_aggr_size = GSI_OUT_AGGR_SIZE;
-		info.out_req_buf_len = GSI_OUT_AGGR_SIZE;
+		info.out_req_buf_len = ul_aggr_size;
 		info.out_req_num_buf = num_out_bufs;
 		info.notify_buf_len = sizeof(struct usb_cdc_notification);
 
@@ -2557,11 +2535,9 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 		info.fs_desc_hdr = mbim_gsi_fs_function;
 		info.hs_desc_hdr = mbim_gsi_hs_function;
 		info.ss_desc_hdr = mbim_gsi_ss_function;
-		gsi->d_port.in_aggr_size = GSI_IN_MBIM_AGGR_SIZE;
-		info.in_req_buf_len = GSI_IN_BUFF_SIZE;
+		info.in_req_buf_len = 0x4000;
 		info.in_req_num_buf = num_in_bufs;
-		gsi->d_port.out_aggr_size = GSI_OUT_AGGR_SIZE;
-		info.out_req_buf_len = GSI_OUT_MBIM_BUF_LEN;
+		info.out_req_buf_len = 0x4000;
 		info.out_req_num_buf = num_out_bufs;
 		info.notify_buf_len = sizeof(struct usb_cdc_notification);
 		mbim_gsi_desc.wMaxSegmentSize = cpu_to_le16(0x800);
@@ -2596,11 +2572,9 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 		info.fs_desc_hdr = rmnet_gsi_fs_function;
 		info.hs_desc_hdr = rmnet_gsi_hs_function;
 		info.ss_desc_hdr = rmnet_gsi_ss_function;
-		gsi->d_port.in_aggr_size = GSI_IN_RMNET_AGGR_SIZE;
-		info.in_req_buf_len = GSI_IN_BUFF_SIZE;
+		info.in_req_buf_len = 16384;
 		info.in_req_num_buf = num_in_bufs;
-		gsi->d_port.out_aggr_size = GSI_OUT_AGGR_SIZE;
-		info.out_req_buf_len = GSI_OUT_RMNET_BUF_LEN;
+		info.out_req_buf_len = 16384;
 		info.out_req_num_buf = num_out_bufs;
 		info.notify_buf_len = sizeof(struct usb_cdc_notification);
 		break;
@@ -2626,11 +2600,9 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 		info.fs_desc_hdr = ecm_gsi_fs_function;
 		info.hs_desc_hdr = ecm_gsi_hs_function;
 		info.ss_desc_hdr = ecm_gsi_ss_function;
-		gsi->d_port.in_aggr_size = GSI_IN_ECM_AGGR_SIZE;
-		info.in_req_buf_len = GSI_IN_BUFF_SIZE;
+		info.in_req_buf_len = 2048;
 		info.in_req_num_buf = num_in_bufs;
-		gsi->d_port.out_aggr_size = GSI_OUT_AGGR_SIZE;
-		info.out_req_buf_len = GSI_OUT_ECM_BUF_LEN;
+		info.out_req_buf_len = 2048;
 		info.out_req_num_buf = num_out_bufs;
 		info.notify_buf_len = GSI_CTRL_NOTIFY_BUFF_LEN;
 

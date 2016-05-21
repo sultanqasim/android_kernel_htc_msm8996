@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -325,7 +325,7 @@ static u32 mdss_mdp_perf_calc_pipe_prefill_video(struct mdss_mdp_prefill_params
 	u32 y_buf_bytes = 0;
 	u32 y_scaler_bytes = 0;
 	u32 pp_bytes = 0, pp_lines = 0;
-	u32 post_scaler_bytes;
+	u32 post_scaler_bytes = 0;
 	u32 fbc_bytes = 0;
 
 	prefill_bytes = prefill->ot_bytes;
@@ -1519,7 +1519,7 @@ int mdss_mdp_perf_bw_check_pipe(struct mdss_mdp_perf_params *perf,
 {
 	struct mdss_data_type *mdata = pipe->mixer_left->ctl->mdata;
 	struct mdss_mdp_ctl *ctl = pipe->mixer_left->ctl;
-	u32 vbp_fac, threshold;
+	u32 vbp_fac = 0, threshold;
 	u64 prefill_bw, pipe_bw, max_pipe_bw;
 
 	/* we only need bandwidth check on real-time clients (interfaces) */
@@ -2390,26 +2390,17 @@ int mdss_mdp_block_mixer_destroy(struct mdss_mdp_mixer *mixer)
 	return 0;
 }
 
-int mdss_mdp_ctl_cmd_set_autorefresh(struct mdss_mdp_ctl *ctl, int frame_cnt)
+int mdss_mdp_ctl_cmd_autorefresh_enable(struct mdss_mdp_ctl *ctl,
+		int frame_cnt)
 {
 	int ret = 0;
-
 	if (ctl->panel_data->panel_info.type == MIPI_CMD_PANEL) {
 		ret = mdss_mdp_cmd_set_autorefresh_mode(ctl, frame_cnt);
 	} else {
 		pr_err("Mode not supported for this panel\n");
 		ret = -EINVAL;
 	}
-
 	return ret;
-}
-
-int mdss_mdp_ctl_cmd_get_autorefresh(struct mdss_mdp_ctl *ctl)
-{
-	if (ctl->panel_data->panel_info.type == MIPI_CMD_PANEL)
-		return mdss_mdp_cmd_get_autorefresh_mode(ctl);
-	else
-		return 0;
 }
 
 int mdss_mdp_ctl_splash_finish(struct mdss_mdp_ctl *ctl, bool handoff)
@@ -2996,7 +2987,8 @@ void mdss_mdp_ctl_dsc_setup(struct mdss_mdp_ctl *ctl,
 		break;
 	case MDP_DUAL_LM_DUAL_DISPLAY:
 		sctl = mdss_mdp_get_split_ctl(ctl);
-		spinfo = &sctl->panel_data->panel_info;
+		if (sctl)
+			spinfo = &sctl->panel_data->panel_info;
 
 		__dsc_setup_dual_lm_dual_display(ctl, pinfo, sctl, spinfo);
 		break;
@@ -3572,7 +3564,6 @@ static void mdss_mdp_ctl_restore_sub(struct mdss_mdp_ctl *ctl)
 			MDSS_MDP_REG_DISP_INTF_SEL);
 
 	if (ctl->mfd && ctl->panel_data) {
-		ctl->mfd->ipc_resume = true;
 		mdss_mdp_pp_resume(ctl->mfd);
 
 		if (is_dsc_compression(&ctl->panel_data->panel_info)) {
@@ -3622,6 +3613,8 @@ void mdss_mdp_ctl_restore(bool locked)
 		if (sctl) {
 			mdss_mdp_ctl_restore_sub(sctl);
 			mdss_mdp_ctl_split_display_enable(1, ctl, sctl);
+		} else if (is_pingpong_split(ctl->mfd)) {
+			mdss_mdp_ctl_pp_split_display_enable(true, ctl);
 		}
 		if (ctl->ops.restore_fnc)
 			ctl->ops.restore_fnc(ctl, locked);
@@ -4005,10 +3998,11 @@ void mdss_mdp_set_roi(struct mdss_mdp_ctl *ctl,
 
 	if (ctl->mfd->split_mode == MDP_DUAL_LM_DUAL_DISPLAY) {
 		struct mdss_mdp_ctl *sctl = mdss_mdp_get_split_ctl(ctl);
-
-		mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
-		sctl->roi = sctl->mixer_left->roi;
-	} else if (is_dual_lm_single_display(ctl->mfd)) {
+		if (sctl) {
+			mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
+			sctl->roi = sctl->mixer_left->roi;
+		}
+	} else if (ctl->mixer_right && is_dual_lm_single_display(ctl->mfd)) {
 
 		mdss_mdp_set_mixer_roi(ctl->mixer_right, r_roi);
 

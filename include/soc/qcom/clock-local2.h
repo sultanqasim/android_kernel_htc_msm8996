@@ -71,6 +71,7 @@ struct rcg_clk {
 	struct clk	c;
 
 	bool non_local_children;
+	bool non_local_control;
 	bool force_enable_rcgr;
 	void *const __iomem *base;
 };

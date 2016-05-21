@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -375,7 +375,7 @@ static bool mdss_rotator_is_work_pending(struct mdss_rot_mgr *mgr,
 
 static int mdss_rotator_create_fence(struct mdss_rot_entry *entry)
 {
-	int ret, fd;
+	int ret = 0, fd;
 	u32 val;
 	struct sync_pt *sync_pt;
 	struct sync_fence *fence;
@@ -1841,6 +1841,7 @@ static void mdss_rotator_wq_handler(struct work_struct *work)
 		return;
 	}
 
+	mdss_rotator_clk_ctrl(rot_mgr, true);
 	hw = mdss_rotator_get_hw_resource(entry->queue, entry);
 	if (!hw) {
 		pr_err("no hw for the queue\n");
@@ -1864,6 +1865,7 @@ static void mdss_rotator_wq_handler(struct work_struct *work)
 
 get_hw_res_err:
 	mdss_rotator_signal_output(entry);
+	mdss_rotator_clk_ctrl(rot_mgr, false);
 	mdss_rotator_release_entry(rot_mgr, entry);
 	atomic_dec(&request->pending_count);
 }
@@ -1960,7 +1962,6 @@ static int mdss_rotator_open_session(struct mdss_rot_mgr *mgr,
 		goto resource_err;
 	}
 
-	mdss_rotator_clk_ctrl(rot_mgr, true);
 	ret = mdss_rotator_update_perf(mgr);
 	if (ret) {
 		pr_err("fail to open session, not enough clk/bw\n");
@@ -1973,7 +1974,6 @@ static int mdss_rotator_open_session(struct mdss_rot_mgr *mgr,
 
 	goto done;
 perf_err:
-	mdss_rotator_clk_ctrl(rot_mgr, false);
 	mdss_rotator_resource_ctrl(mgr, false);
 resource_err:
 	mutex_lock(&private->perf_lock);
@@ -2027,7 +2027,6 @@ static int mdss_rotator_close_session(struct mdss_rot_mgr *mgr,
 	devm_kfree(&mgr->pdev->dev, perf->work_distribution);
 	devm_kfree(&mgr->pdev->dev, perf);
 	mdss_rotator_update_perf(mgr);
-	mdss_rotator_clk_ctrl(rot_mgr, false);
 done:
 	pr_debug("Closed session id:%u", id);
 	ATRACE_END(__func__);
@@ -2318,7 +2317,7 @@ static int mdss_rotator_handle_request32(struct mdss_rot_mgr *mgr,
 		pr_err("fail to allocate rotation items\n");
 		return -ENOMEM;
 	}
-	ret = copy_from_user(items, compat_ptr(user_req32.list), size);
+	ret = copy_from_user(items, user_req32.list, size);
 	if (ret) {
 		pr_err("fail to copy rotation items\n");
 		goto handle_request32_err;
@@ -2345,7 +2344,7 @@ static int mdss_rotator_handle_request32(struct mdss_rot_mgr *mgr,
 		goto handle_request32_err1;
 	}
 
-	ret = copy_to_user(compat_ptr(user_req32.list), items, size);
+	ret = copy_to_user(user_req32.list, items, size);
 	if (ret) {
 		pr_err("fail to copy output fence to user\n");
 		mdss_rotator_remove_request(mgr, private, req);

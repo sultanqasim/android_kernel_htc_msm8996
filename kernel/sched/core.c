@@ -85,6 +85,9 @@
 #ifdef CONFIG_PARAVIRT
 #include <asm/paravirt.h>
 #endif
+#ifdef CONFIG_MSM_APP_SETTINGS
+#include <asm/app_api.h>
+#endif
 
 #include "sched.h"
 #include "../workqueue_internal.h"
@@ -92,6 +95,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
+
 
 const char *task_event_names[] = {"PUT_PREV_TASK", "PICK_NEXT_TASK",
 				  "TASK_WAKE", "TASK_MIGRATE", "TASK_UPDATE",
@@ -650,26 +654,24 @@ void resched_cpu(int cpu)
 
 #ifdef CONFIG_SMP
 #ifdef CONFIG_NO_HZ_COMMON
-/*
- * In the semi idle case, use the nearest busy cpu for migrating timers
- * from an idle cpu.  This is good for power-savings.
- *
- * We don't do similar optimization for completely idle system, as
- * selecting an idle cpu will add more delays to the timers than intended
- * (as that cpu's timer base may not be uptodate wrt jiffies etc).
- */
+
+extern int over_schedule_budget(int cpu);
 int get_nohz_timer_target(int pinned)
 {
 	int cpu = smp_processor_id();
 	int i;
 	struct sched_domain *sd;
 
-	if (pinned || !get_sysctl_timer_migration() || !idle_cpu(cpu))
+	if (pinned || !get_sysctl_timer_migration() || (!over_schedule_budget(cpu) && !idle_cpu(cpu)))
 		return cpu;
 
 	rcu_read_lock();
 	for_each_domain(cpu, sd) {
+
 		for_each_cpu(i, sched_domain_span(sd)) {
+			if (over_schedule_budget(i))
+				continue;
+
 			if (!idle_cpu(i)) {
 				cpu = i;
 				goto unlock;
@@ -1804,8 +1806,7 @@ nearly_same_freq(unsigned int cur_freq, unsigned int freq_required)
 	return delta < sysctl_sched_freq_dec_notify;
 }
 
-/* Convert busy time to frequency equivalent */
-static inline unsigned int load_to_freq(struct rq *rq, u64 load)
+unsigned int load_to_freq(struct rq *rq, u64 load)
 {
 	unsigned int freq;
 
@@ -1818,6 +1819,7 @@ static inline unsigned int load_to_freq(struct rq *rq, u64 load)
 
 	return freq;
 }
+EXPORT_SYMBOL(load_to_freq);
 
 /* Should scheduler alert governor for changing frequency? */
 static int send_notification(struct rq *rq)
@@ -1831,6 +1833,7 @@ static int send_notification(struct rq *rq)
 
 	cur_freq = load_to_freq(rq, rq->old_busy_time);
 	freq_required = load_to_freq(rq, rq->prev_runnable_sum);
+
 
 	if (nearly_same_freq(cur_freq, freq_required))
 		return 0;
@@ -2150,6 +2153,54 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 	BUG();
 }
 
+static inline void update_cpu_load(struct rq *rq, u64 wallclock)
+{
+	int nr_full_windows;
+	int i;
+	u64 sum = 0, avg, elapsetime;
+	u64 load = rq->prev_runnable_sum;
+	struct rq * rqi;
+
+	if (wallclock - rq->load_last_update_timestamp < sched_ravg_window)
+		return;
+
+	load =  scale_load_to_cpu(load, cpu_of(rq));
+
+	if (load > sched_ravg_window)
+		load = sched_ravg_window;
+
+	nr_full_windows = div64_u64((rq->window_start - rq->load_last_update_timestamp),
+						sched_ravg_window);
+
+	for (i = 0; i < nr_full_windows + 1 && i < SCHED_LOAD_WINDOW_SIZE; i++) {
+		rq->load_history[rq->load_history_index] = load;
+		if (++rq->load_history_index == SCHED_LOAD_WINDOW_SIZE)
+			rq->load_history_index = 0;
+	}
+
+	for (i = 0; i < SCHED_LOAD_WINDOW_SIZE; i++) {
+		sum += rq->load_history[i];
+	}
+
+	avg = div64_u64(sum, SCHED_LOAD_WINDOW_SIZE);
+
+	rq->load_avg = real_to_pct(avg);
+	rq->load_last_update_timestamp = wallclock;
+
+	elapsetime = SCHED_LOAD_WINDOW_SIZE * sched_ravg_window;
+
+	for (i = 0; i < NR_CPUS; i++) {
+		if (i == cpu_of(rq))
+			continue;
+		rqi = cpu_rq(i);
+		if (wallclock - rqi->load_last_update_timestamp > elapsetime) {
+			rqi->load_last_update_timestamp = wallclock;
+			memset(rqi->load_history, 0, sizeof(rqi->load_history));
+			rqi->load_avg = 0;
+		}
+	}
+}
+
 u32 __weak get_freq_max_load(int cpu, u32 freq)
 {
 	/* 100% by default */
@@ -2246,7 +2297,11 @@ static inline void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 {
 }
 
-#endif	/* CONFIG_SCHED_FREQ_INPUT */
+static inline void update_cpu_load(struct rq *rq, u64 wallclock)
+{
+}
+
+#endif	
 
 static int account_busy_for_task_demand(struct task_struct *p, int event)
 {
@@ -2457,6 +2512,7 @@ static void update_task_ravg(struct task_struct *p, struct rq *rq,
 
 	update_task_demand(p, rq, event, wallclock);
 	update_cpu_busy_time(p, rq, event, wallclock, irqtime);
+	update_cpu_load(rq, wallclock);
 
 done:
 	trace_sched_update_task_ravg(p, rq, event, wallclock, irqtime);
@@ -2549,6 +2605,11 @@ static inline void set_window_start(struct rq *rq)
 		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
 		rq->nt_curr_runnable_sum = rq->nt_prev_runnable_sum = 0;
 #endif
+		memset(rq->load_history, 0, sizeof(rq->load_history));
+		rq->load_avg = 0;
+		rq->load_history_index = 0;
+		rq->load_last_update_timestamp = 0;
+
 		raw_spin_unlock(&sync_rq->lock);
 	}
 
@@ -2685,6 +2746,13 @@ void reset_all_window_stats(u64 window_start, unsigned int window_size)
 		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
 		rq->nt_curr_runnable_sum = rq->nt_prev_runnable_sum = 0;
 #endif
+
+		memset(rq->load_history, 0, sizeof(rq->load_history));
+		rq->load_avg = 0;
+		rq->load_history_index = 0;
+		rq->load_last_update_timestamp = 0;
+
+
 		reset_cpu_hmp_stats(cpu, 1);
 	}
 
@@ -4095,9 +4163,6 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	u64 wallclock;
 	struct related_thread_group *grp = NULL;
 #endif
-	bool freq_notif_allowed = !(wake_flags & WF_NO_NOTIFIER);
-
-	wake_flags &= ~WF_NO_NOTIFIER;
 
 	/*
 	 * If we are going to wake up a thread waiting for CONDITION we
@@ -4188,14 +4253,11 @@ out:
 		atomic_notifier_call_chain(&migration_notifier_head,
 					   0, (void *)&mnd);
 
-	if (freq_notif_allowed) {
-		if (!same_freq_domain(src_cpu, cpu)) {
-			check_for_freq_change(cpu_rq(cpu));
-			check_for_freq_change(cpu_rq(src_cpu));
-		} else if (heavy_task) {
-			check_for_freq_change(cpu_rq(cpu));
-		}
-	}
+	if (!same_freq_domain(src_cpu, cpu)) {
+		check_for_freq_change(cpu_rq(cpu));
+		check_for_freq_change(cpu_rq(src_cpu));
+	} else if (heavy_task)
+		check_for_freq_change(cpu_rq(cpu));
 
 	return success;
 }
@@ -4265,26 +4327,6 @@ int wake_up_process(struct task_struct *p)
 	return try_to_wake_up(p, TASK_NORMAL, 0);
 }
 EXPORT_SYMBOL(wake_up_process);
-
-/**
- * wake_up_process_no_notif - Wake up a specific process without notifying
- * governor
- * @p: The process to be woken up.
- *
- * Attempt to wake up the nominated process and move it to the set of runnable
- * processes.
- *
- * Return: 1 if the process was woken up, 0 if it was already running.
- *
- * It may be assumed that this function implies a write memory barrier before
- * changing the task state if and only if any tasks are woken up.
- */
-int wake_up_process_no_notif(struct task_struct *p)
-{
-	WARN_ON(task_is_stopped_or_traced(p));
-	return try_to_wake_up(p, TASK_NORMAL, WF_NO_NOTIFIER);
-}
-EXPORT_SYMBOL(wake_up_process_no_notif);
 
 int wake_up_state(struct task_struct *p, unsigned int state)
 {
@@ -4718,6 +4760,13 @@ prepare_task_switch(struct rq *rq, struct task_struct *prev,
 	fire_sched_out_preempt_notifiers(prev, next);
 	prepare_lock_switch(rq, next);
 	prepare_arch_switch(next);
+
+#ifdef CONFIG_MSM_APP_SETTINGS
+	if (next->mm && unlikely(next->mm->app_setting))
+		set_app_setting_bit(APP_SETTING_BIT);
+	else
+		clear_app_setting_bit(APP_SETTING_BIT);
+#endif
 }
 
 /**
@@ -7103,6 +7152,7 @@ void sched_show_task(struct task_struct *p)
 	unsigned long free = 0;
 	int ppid;
 	unsigned state;
+	struct task_struct *group_leader;
 
 	state = p->state ? __ffs(p->state) + 1 : 0;
 	printk(KERN_INFO "%-15.15s %c", p->comm,
@@ -7124,15 +7174,40 @@ void sched_show_task(struct task_struct *p)
 	rcu_read_lock();
 	ppid = task_pid_nr(rcu_dereference(p->real_parent));
 	rcu_read_unlock();
-	printk(KERN_CONT "%5lu %5d %6d 0x%08lx\n", free,
+	printk(KERN_CONT "%5lu %5d %6d 0x%08lx c%d %llu\n", free,
 		task_pid_nr(p), ppid,
-		(unsigned long)task_thread_info(p)->flags);
+		(unsigned long)task_thread_info(p)->flags, p->on_cpu,
+#if defined(CONFIG_SCHEDSTATS) || defined(CONFIG_TASK_DELAY_ACCT)
+		div64_u64(task_rq(p)->clock - p->sched_info.last_arrival, NSEC_PER_MSEC));
+#else
+		(unsigned long long)0);
+#endif
+
+	group_leader = p->group_leader;
+	printk(KERN_CONT "  tgid: %d, group leader: %s\n",
+			p->tgid, group_leader ? group_leader->comm : "unknown");
+
+#if defined(CONFIG_DEBUG_MUTEXES)
+	if (state == TASK_UNINTERRUPTIBLE) {
+		struct task_struct* blocker = p->blocked_by;
+		if (blocker) {
+			printk(KERN_CONT " blocked by %.32s (%d:%d) for %u ms\n",
+				blocker->comm, blocker->tgid, blocker->pid,
+				jiffies_to_msecs(jiffies - p->blocked_since));
+		}
+	}
+#endif
 
 	print_worker_info(KERN_INFO, p);
 	show_stack(p, NULL);
 }
 
 void show_state_filter(unsigned long state_filter)
+{
+	show_thread_group_state_filter(NULL, state_filter);
+}
+
+void show_thread_group_state_filter(const char *tg_comm, unsigned long state_filter)
 {
 	struct task_struct *g, *p;
 
@@ -7150,14 +7225,17 @@ void show_state_filter(unsigned long state_filter)
 		 * console might take a lot of time:
 		 */
 		touch_nmi_watchdog();
-		if (!state_filter || (p->state & state_filter))
-			sched_show_task(p);
+		if (!tg_comm || (tg_comm && !strncmp(tg_comm, g->comm, TASK_COMM_LEN))) {
+			if (!state_filter || (p->state & state_filter))
+				sched_show_task(p);
+		}
 	}
 
 	touch_all_softlockup_watchdogs();
 
 #ifdef CONFIG_SYSRQ_SCHED_DEBUG
-	sysrq_sched_debug_show();
+	if (!tg_comm)
+		sysrq_sched_debug_show();
 #endif
 	rcu_read_unlock();
 	/*
@@ -9769,6 +9847,12 @@ void __init sched_init(void)
 		rq->notifier_sent = 0;
 #endif
 #endif
+		memset(rq->load_history, 0, sizeof(rq->load_history));
+		rq->load_avg = 0;
+		rq->budget = 100;
+		rq->load_history_index = 0;
+		rq->load_last_update_timestamp = 0;
+
 		rq->max_idle_balance_cost = sysctl_sched_migration_cost;
 		rq->cstate = 0;
 		rq->wakeup_latency = 0;

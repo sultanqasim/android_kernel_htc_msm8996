@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -181,6 +181,8 @@ enum dsi_pm_type {
 #define DSI_INTR_BTA_DONE               BIT(20)
 #define DSI_INTR_VIDEO_DONE_MASK	BIT(17)
 #define DSI_INTR_VIDEO_DONE		BIT(16)
+#define DSI_CMD_MDP_STREAM0_DONE_MASK	BIT(11)
+#define DSI_CMD_MDP_STREAM0_DONE	BIT(10)
 #define DSI_INTR_CMD_MDP_DONE_MASK	BIT(9)
 #define DSI_INTR_CMD_MDP_DONE		BIT(8)
 #define DSI_INTR_CMD_DMA_DONE_MASK	BIT(1)
@@ -274,11 +276,13 @@ struct dsi_shared_data {
 
 	/* Shared mutex for DSI PHY regulator */
 	struct mutex phy_reg_lock;
+	struct mutex vddio_lock;
 
 	/* Data bus(AXI) scale settings */
 	struct msm_bus_scale_pdata *bus_scale_table;
 	u32 bus_handle;
 	u32 bus_refcount;
+	u32 vddio_refcount;
 };
 
 struct mdss_dsi_data {
@@ -374,7 +378,7 @@ struct dsi_err_container {
 #define DSI_CTRL_CLK_MASTER	DSI_CTRL_LEFT
 
 #define DSI_EV_PLL_UNLOCKED		0x0001
-#define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
+#define DSI_EV_DLNx_FIFO_UNDERFLOW	0x0002
 #define DSI_EV_DSI_FIFO_EMPTY		0x0004
 #define DSI_EV_DLNx_FIFO_OVERFLOW	0x0008
 #define DSI_EV_LP_RX_TIMEOUT		0x0010
@@ -386,6 +390,8 @@ struct dsi_err_container {
 #define MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL	0x02a8
 #define MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL2	0x02ac
 #define MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL3	0x02b0
+
+#define COLOR_TEMP_MODE	32
 
 struct mdss_dsi_ctrl_pdata {
 	int ndx;	/* panel_num */
@@ -425,6 +431,7 @@ struct mdss_dsi_ctrl_pdata {
 	int rst_gpio;
 	int disp_en_gpio;
 	int bklt_en_gpio;
+	int vddio_gpio;
 	int mode_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
 	bool pwm_pmi;
@@ -532,13 +539,38 @@ struct mdss_dsi_ctrl_pdata {
 	struct workqueue_struct *workq;
 	struct delayed_work dba_work;
 	bool timing_db_mode;
-	bool update_phy_timing; /* flag to recalculate PHY timings */
+
+	
+	struct dsi_panel_cmds cabc_off_cmds;
+	struct dsi_panel_cmds cabc_ui_cmds;
+	struct dsi_panel_cmds cabc_video_cmds;
+	struct dsi_panel_cmds color_temp_cmds[COLOR_TEMP_MODE];
+	u8 color_temp_cnt;
+	struct dsi_panel_cmds color_default_cmds;
+	struct dsi_panel_cmds color_srgb_cmds;
+	u8 vddio_switch;
+	struct regulator *vddio_reg;
+	struct dsi_panel_cmds burst_on_cmds;
+	struct dsi_panel_cmds burst_off_cmds;
+
+	int burst_on_level;
+	int burst_off_level;
+};
+
+struct te_data {
+	bool first;
+	bool irq_enabled;
+	int irq;
+	unsigned long ts_vsync;
+	unsigned long ts_last_check;
+	spinlock_t spinlock;
 };
 
 struct dsi_status_data {
 	struct notifier_block fb_notifier;
 	struct delayed_work check_status;
 	struct msm_fb_data_type *mfd;
+	struct te_data te;
 };
 
 void mdss_dsi_read_hw_revision(struct mdss_dsi_ctrl_pdata *ctrl);
@@ -559,7 +591,7 @@ void mdss_dsi_cmd_mode_ctrl(int enable);
 void mdp4_dsi_cmd_trigger(void);
 void mdss_dsi_cmd_mdp_start(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_cmd_bta_sw_trigger(struct mdss_panel_data *pdata);
-void mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl);
+bool mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl);
 int mdss_dsi_clk_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, void *clk_handle,
 	enum mdss_dsi_clk_type clk_type, enum mdss_dsi_clk_state clk_state);
 void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
@@ -567,15 +599,17 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
 void mdss_dsi_controller_cfg(int enable,
 				struct mdss_panel_data *pdata);
 void mdss_dsi_sw_reset(struct mdss_dsi_ctrl_pdata *ctrl_pdata, bool restore);
+int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 irqreturn_t hw_vsync_handler(int irq, void *data);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
+void mdss_dsi_disable_intr(struct mdss_dsi_ctrl_pdata *ctrl, u32 isr, bool read_isr);
 
 void mdss_dsi_set_tx_power_mode(int mode, struct mdss_panel_data *pdata);
 int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 			    int frame_rate);
-int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy);
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata);
 int mdss_dsi_link_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void mdss_dsi_link_clk_deinit(struct device *dev,
@@ -620,7 +654,7 @@ int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl);
 int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl);
 bool __mdss_dsi_clk_enabled(struct mdss_dsi_ctrl_pdata *ctrl, u8 clk_type);
 void mdss_dsi_ctrl_setup(struct mdss_dsi_ctrl_pdata *ctrl);
-void mdss_dsi_dln0_phy_err(struct mdss_dsi_ctrl_pdata *ctrl, bool print_en);
+bool mdss_dsi_dln0_phy_err(struct mdss_dsi_ctrl_pdata *ctrl, bool print_en);
 void mdss_dsi_lp_cd_rx(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_get_hw_revision(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_read_phy_revision(struct mdss_dsi_ctrl_pdata *ctrl);

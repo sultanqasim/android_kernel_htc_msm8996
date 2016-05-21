@@ -21,7 +21,7 @@
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "sched_enable_hmp=1 sched_enable_power_aware=1";
+		bootargs = "sched_enable_hmp=1 sched_enable_power_aware=1 androidboot.rpmdevice=290000.qcom,rpm-stats-ver";
 	};
 
 	aliases {
@@ -40,6 +40,7 @@
 		i2c8 = &i2c_8;
 		i2c12 = &i2c_12;
 		spi0 = &spi_0;
+		spi2 = &spi_2;
 	};
 
 	psci {
@@ -200,6 +201,12 @@
 		       label = "dfps_data_mem";
 		};
 
+		memory_latency: mem_latency@92000000 {
+		       no-map;
+		       reg = <0 0x92000000 0 0x100000>;
+		       label = "memory_latency";
+		};
+
 		cont_splash_mem: cont_splash_mem@83401000 {
 			reg = <0 0x83401000 0 0x23FF000>;
 			label = "cont_splash_mem";
@@ -222,6 +229,16 @@
 	#size-cells = <1>;
 	ranges = <0 0 0 0xffffffff>;
 	compatible = "simple-bus";
+
+	cpu_fuse@70134 {
+		compatible = "qcom,cpucx-8996";
+		reg = <0x70134 0x4>;
+	};
+
+	cpu_fuse@70148 {
+		compatible = "qcom,cpumx-8996";
+		reg = <0x70148 0x4>;
+	};
 
 	apc_apm: apm@099e0000 {
 		compatible = "qcom,msm-apm";
@@ -414,23 +431,23 @@
 		pinctrl-names = "i2c_active", "i2c_sleep";
 		pinctrl-0 = <&i2c_8_active>;
 		pinctrl-1 = <&i2c_8_sleep>;
+		qcom,disable-dma;
 	};
 
 	blsp1_uart2: uart@07570000 { /* BLSP1 UART2 */
-		compatible = "qcom,msm-hsuart-v14";
+		compatible = "qcom,msm-hsuart-v14-brcmbt";
 		reg = <0x07570000 0x1000>,
 		    <0x7544000 0x2b000>;
 		status = "disabled";
 		reg-names = "core_mem", "bam_mem";
-		interrupt-names = "core_irq", "bam_irq", "wakeup_irq";
+		interrupt-names = "core_irq", "bam_irq";
 		#address-cells = <0>;
-		interrupt-parent = <&blsp1_uart2>;
-		interrupts = <0 1 2>;
+		interrupt-parent = <&blsp1_uart2>;  /* BLSP2 at GPIO table */
+		interrupts = <0 1>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 0 108 0
-			    1 &intc 0 0 238 0
-			    2 &tlmm 42 0>;
+			    1 &intc 0 0 238 0>;
 
 		qcom,inject-rx-on-wakeup;
 		qcom,rx-char-to-inject = <0xFD>;
@@ -452,6 +469,27 @@
 			    <86 512 0 0>,
 			    <86 512 500 800>;
 	};
+
+	// [HTC_BT] +++
+	htcbtpower: htc,htcbt_rfkill {
+		compatible = "htc,htcbt_rfkill";
+		brcm,bt-regon-gpio = <&tlmm 73 0>; /* BT_EN */
+
+		/* Host_wake_up pull up to select as UART per BCM4359 SPEC for BT ON */
+		pinctrl-names = "bt_wake_host_gpio_on", "bt_wake_host_gpio_off";
+		pinctrl-0 = <&bt_wake_host_gpio_on>;
+		pinctrl-1 = <&bt_wake_host_gpio_off>;
+	};
+
+	htc,htcbt_bluesleep {
+	    compatible = "htc,bluesleep_bcm";
+	    brcm_bt_host_wake = <&tlmm 117 0>; /* BT_WAKE_HOST */
+	    brcm_bt_wake_dev  = <&tlmm 118 0>; /* BT_WAKE_DEV */
+	    interrupt-controller;
+            #interrupt-cells = <1>;
+            interrupt-parent = <&tlmm>;
+	};
+	// [HTC_BT] ---
 
 	m4m_cache: qcom,m4m {
 		compatible = "devfreq-simple-dev";
@@ -746,9 +784,8 @@
 
 	clock_mmss: qcom,mmsscc@8c0000 {
 		compatible = "qcom,mmsscc-8996";
-		reg = <0x8c0000 0xb00c>,
-			<0x74130 0x8>;
-		reg-names = "cc_base", "efuse";
+		reg = <0x8c0000 0xb00c>;
+		reg-names = "cc_base";
 		vdd_dig-supply = <&pm8994_s1_corner>;
 		mmpll4_dig-supply = <&pm8994_s1_corner>;
 		mmpll4_analog-supply = <&pm8994_l12>;
@@ -772,8 +809,9 @@
 
 	clock_gpu: qcom,gpucc@8c0000 {
 		compatible = "qcom,gpucc-8996";
-		reg = <0x8c0000 0xb00c>;
-		reg-names = "cc_base";
+		reg = <0x8c0000 0xb00c>,
+			<0x74130 0x8>;
+		reg-names = "cc_base", "efuse";
 		vdd_gfx-supply = <&gfx_vreg>;
 		qcom,gfx3d_clk_src-opp-handle = <&msm_gpu>;
 		vdd_mx-supply = <&pm8994_s2_corner>;
@@ -821,8 +859,6 @@
 		#interrupt-cells = <1>;
 		interrupt-parent = <&tlmm>;
 		qcom,gpio-connect = <&tlmm 54 0>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&wcd_intr_default>;
 	};
 
 	clock_audio: audio_ext_clk {
@@ -913,9 +949,6 @@
 				      30>;
 
 			qcom,cdc-reset-gpio = <&tlmm 64 0>;
-			pinctrl-names = "default", "idle";
-			pinctrl-0 = <&cdc_reset_active>;
-			pinctrl-1 = <&cdc_reset_sleep>;
 
 			clock-names = "wcd_clk", "wcd_native_clk";
 			clocks = <&clock_audio clk_audio_pmi_clk>,
@@ -947,10 +980,10 @@
 						   "cdc-vdd-rx-h",
 						   "cdc-vddpx-1";
 
-			qcom,cdc-micbias1-mv = <1800>;
+			qcom,cdc-micbias1-mv = <2200>; /* HTC_AUD */
 			qcom,cdc-micbias2-mv = <1800>;
-			qcom,cdc-micbias3-mv = <1800>;
-			qcom,cdc-micbias4-mv = <1800>;
+			qcom,cdc-micbias3-mv = <2200>; /* HTC_AUD */
+			qcom,cdc-micbias4-mv = <2200>; /* HTC_AUD */
 
 			qcom,cdc-mclk-clk-rate = <9600000>;
 			qcom,cdc-slim-ifd = "tasha-slim-ifd";
@@ -1365,7 +1398,7 @@
 	};
 
 	pcie1: qcom,pcie@00608000 {
-		compatible = "qcom,pci-msm";
+		compatible = "qcom,pci-msmXX";
 		cell-index = <1>;
 
 		reg = <0x00608000 0x2000>,
@@ -1455,6 +1488,7 @@
 			&pcie1_perst_default
 			&pcie1_wake_sleep>;
 
+		wake-gpio = <&tlmm 132 0>;
 		perst-gpio = <&tlmm 130 0>;
 
 		gdsc-smmu-supply = <&gdsc_aggre0_noc>;
@@ -1515,7 +1549,7 @@
 	};
 
 	pcie2: qcom,pcie@00610000 {
-		compatible = "qcom,pci-msm";
+		compatible = "qcom,pci-msmXX";
 		cell-index = <2>;
 
 		reg = <0x00610000 0x2000>,
@@ -1730,18 +1764,19 @@
 
 	wdog: qcom,wdt@9830000 {
 		compatible = "qcom,msm-watchdog";
-		reg = <0x9830000 0x1000>;
-		reg-names = "wdt-base";
+		reg = <0x9830000 0x1000>, <0x4a3000 0x1000>;
+		reg-names = "wdt-base", "mpm-clock-base";
 		interrupts = <0 28 0>, <0 29 0>;
-		qcom,bark-time = <11000>;
-		qcom,pet-time = <10000>;
+		qcom,bark-time = <18000>;
+		qcom,pet-time = <8000>;
 		qcom,ipi-ping;
 		qcom,wakeup-enable;
 	};
 
 	qcom,msm-rtb {
 		compatible = "qcom,msm-rtb";
-		qcom,rtb-size = <0x100000>;
+		reg = <0x83700000 0x100000>;
+		reg-names = "msm_rtb_res";
 	};
 
 	qcom,mpm2-sleep-counter@4a3000 {
@@ -1760,6 +1795,7 @@
 		mem_dump_table@10 {
 			compatible = "qcom,msm-imem-mem_dump_table";
 			reg = <0x10 8>;
+			htc,mem-dump-table-phys = <0x836f0000>; /* at the end 0x10000 of Last LK RAM log */
 		};
 
 		restart_reason@65c {
@@ -1775,6 +1811,12 @@
 		pil@94c {
 			compatible = "qcom,msm-imem-pil";
 			reg = <0x94c 200>;
+		};
+
+		restart_info@a94 {
+			compatible = "htc,msm-imem-restart_info";
+			reg = <0xa94 100>;
+			info_size = <100>;
 		};
 	};
 
@@ -2012,7 +2054,12 @@
 	android_usb@66bf0c8 {
 		compatible = "qcom,android-usb";
 		reg = <0x066bf0c8 0xc8>;
-		qcom,pm-qos-latency = <41 91 801>;
+		htc,fserial-init-string = "char_bridge:modem,tty,tty:autobot,tty:serial,tty:autobot,tty:acm"; /*++ 2015/06/23 USB Team, PCN00004 ++*/
+		htc,diag-client = "diag"; /*++ 2015/06/29 USB Team, PCN00005 ++*/
+		htc,rmnet-transports = "qti,bam2bam_ipa"; /*++ 2015/06/29 USB Team, PCN00005 ++*/
+		htc,android-usb-nluns = <1>; /*++ 2015/10/27 USB Team, PCN00001 ++*/
+		qcom,android-usb-cdrom;	/*++ 2015/10/27 USB Team, PCN00001 ++*/
+		qcom,pm-qos-latency = <301 701 801>;
 	};
 
 	qusb_phy0: qusb@7411000 {
@@ -2032,9 +2079,9 @@
 		qcom,tune2-efuse-bit-pos = <21>;
 		qcom,tune2-efuse-num-bits = <4>;
 		qcom,enable-dpdm-pulsing;
-		qcom,qusb-phy-init-seq = <0xF8 0x80
-					0xB3 0x84
-					0x83 0x88
+		qcom,qusb-phy-init-seq = <0xE8 0x80
+					0x83 0x84
+					0x81 0x88
 					0xC0 0x8C
 					0x30 0x08
 					0x79 0x0C
@@ -2068,7 +2115,7 @@
 		qcom,tune2-efuse-bit-pos = <25>;
 		qcom,tune2-efuse-num-bits = <4>;
 		qcom,qusb-phy-init-seq = <0xF8 0x80
-					0xB3 0x84
+					0x53 0x84
 					0x83 0x88
 					0xC0 0x8C
 					0x30 0x08
@@ -2201,7 +2248,6 @@
 
 	qcom,cnss {
 		compatible = "qcom,cnss";
-		wlan-bootstrap-gpio = <&tlmm 46 0>;
 		wlan-en-gpio = <&pm8994_gpios 8 0>;
 		vdd-wlan-supply = <&rome_vreg>;
 		vdd-wlan-io-supply = <&pm8994_s4>;
@@ -2227,10 +2273,23 @@
 					<45 512 207108 14432000>;
 	};
 
+	/* HTC_WIFI_START */
+	htc,wifi_gpio {
+		compatible = "htc_wifi_gpio";
+		wlan-en-gpio = <&pm8994_gpios 8 0>;
+		wlan-irq-gpio = <&tlmm 122 0>;
+		wlan-seci-out = <&tlmm 25 0>;
+		wlan-seci-in = <&tlmm 26 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wlan_wake_host &wlan_seci_out_init &wlan_seci_in_init>;
+		htc,wlan-rc-num = <0>;
+	};
+	/* HTC_WIFI_END */
+
 	wil6210: qcom,wil6210 {
 		compatible = "qcom,wil6210";
 		qcom,pcie-parent = <&pcie1>;
-		qcom,wigig-en = <&tlmm 94 0>;
+		/*qcom,wigig-en = <&tlmm 94 0>;*/
 		qcom,sleep-clk-en = <&pm8994_gpios 18 0>;
 		qcom,msm-bus,name = "wil6210";
 		qcom,msm-bus,num-cases = <2>;
@@ -2319,7 +2378,6 @@
 		qcom,ahb-clk-vote;
 		qcom,pnoc-clk-vote;
 		qcom,qdsp6v56-1-5;
-		qcom,mx-spike-wa;
 		memory-region = <&modem_mem>;
 		qcom,mem-protect-id = <0xF>;
 
@@ -2328,10 +2386,14 @@
 		qcom,gpio-err-ready = <&smp2pgpio_ssr_smp2p_1_in 1 0>;
 		qcom,gpio-proxy-unvote = <&smp2pgpio_ssr_smp2p_1_in 2 0>;
 		qcom,gpio-stop-ack = <&smp2pgpio_ssr_smp2p_1_in 3 0>;
+                //Modem_BSP++
+                qcom,gpio-reboot-req = <&smp2pgpio_ssr_smp2p_1_in 4 0>;
+                //Modem_BSP--
 		qcom,gpio-shutdown-ack = <&smp2pgpio_ssr_smp2p_1_in 7 0>;
 
 		/* GPIO output to mss */
 		qcom,gpio-force-stop = <&smp2pgpio_ssr_smp2p_1_out 0 0>;
+                qcom,gpio-apps-reboot = <&smp2pgpio_ssr_smp2p_1_out 2 0>;
 		status = "ok";
 	};
 
@@ -2374,6 +2436,40 @@
 			 <&clock_gcc clk_gcc_blsp1_qup1_spi_apps_clk>;
 	};
 
+	spi_2: spi@7577000 { /* BLSP1 QUP3 */
+		compatible = "qcom,spi-qup-v2";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg-names = "spi_physical", "spi_bam_physical";
+		reg = <0x07577000 0x600>,
+		      <0x07544000 0x2b000>;
+		interrupt-names = "spi_irq", "spi_bam_irq";
+		interrupts = <0 97 0>, <0 238 0>;
+		spi-max-frequency = <50000000>;
+
+		qcom,rt-priority;
+		qcom,infinite-mode = <0>;
+		//qcom,use-bam;
+		qcom,ver-reg-exists;
+		qcom,bam-consumer-pipe-index = <16>;
+		qcom,bam-producer-pipe-index = <17>;
+		qcom,master-id = <86>;
+		qcom,use-pinctrl;
+		pinctrl-names = "spi_default", "spi_sleep";
+		pinctrl-0 = <&spi_2_active>;
+		pinctrl-1 = <&spi_2_sleep>;
+		qcom,gpio-mosi = <&tlmm 45 0>;
+		qcom,gpio-miso = <&tlmm 46 0>;
+		qcom,gpio-cs0  = <&tlmm 47 0>;
+		qcom,gpio-clk  = <&tlmm 48 0>;
+
+		clock-names = "iface_clk", "core_clk";
+
+		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
+			 <&clock_gcc clk_gcc_blsp1_qup3_spi_apps_clk>;
+		status = "ok";
+	};
+
 	qcom,rmnet-ipa {
 		compatible = "qcom,rmnet-ipa";
 		qcom,rmnet-ipa-ssr;
@@ -2413,7 +2509,7 @@
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<55 512 0 0>,
-				<55 512 3936000 393600>;
+				<55 512 393600 393600>;
 		clock-names = "core_clk_src", "core_clk",
 				"iface_clk", "bus_clk";
 		clocks = <&clock_gcc clk_ce1_clk>,
@@ -2479,7 +2575,6 @@
 			 <&clock_gcc clk_gcc_ce1_ahb_m_clk>,
 			 <&clock_gcc clk_gcc_ce1_axi_m_clk>;
 		qcom,ce-opp-freq = <171430000>;
-		qcom,qsee-reentrancy-support = <2>;
 	};
 
 	qcom,qbt1000 {
@@ -2492,6 +2587,18 @@
 			clock-frequency = <15000000>;
 		};
 	};
+
+     qcom,htc_smi {
+         compatible = "qcom,htc_smi";
+         qcom,fingerprint-sensor-ssc-spi-conn {
+             qcom,spi-port-id = <2>;
+             qcom,spi-port-slave-index = <0>;
+             qcom,tz-subsys-id = <1>;
+             qcom,ssc-subsys-id = <5>;
+             clock-frequency = <4800000>;
+         };
+     };
+
 
 	qcom,sensor-information {
 		compatible = "qcom,sensor-information";
@@ -2689,13 +2796,13 @@
 	mitigation_profile0: qcom,limit_info-0 {
 		qcom,temperature-sensor = <&sensor_information4>;
 		qcom,boot-frequency-mitigate;
-		qcom,hotplug-mitigation-enable;
+		/*qcom,hotplug-mitigation-enable;*/
 	};
 
 	mitigation_profile1: qcom,limit_info-1 {
 		qcom,temperature-sensor = <&sensor_information6>;
 		qcom,boot-frequency-mitigate;
-		qcom,hotplug-mitigation-enable;
+		/*qcom,hotplug-mitigation-enable;*/
 	};
 
 	mitigation_profile2: qcom,limit_info-2 {
@@ -2722,10 +2829,10 @@
 		qcom,core-limit-temp = <70>;
 		qcom,core-temp-hysteresis = <10>;
 		qcom,hotplug-temp = <105>;
-		qcom,hotplug-temp-hysteresis = <40>;
+		qcom,hotplug-temp-hysteresis = <20>;
 		qcom,freq-mitigation-temp = <90>;
-		qcom,freq-mitigation-temp-hysteresis = <40>;
-		qcom,freq-mitigation-value = <576000>;
+		qcom,freq-mitigation-temp-hysteresis = <20>;
+		qcom,freq-mitigation-value = <1190400>;
 		qcom,online-hotplug-core;
 		qcom,synchronous-cluster-id = <0 1>;
 		qcom,synchronous-cluster-map = <0 2 &CPU0 &CPU1>,
@@ -2761,15 +2868,13 @@
 		qcom,bcl-enable;
 		qcom,bcl-framework-interface;
 		qcom,bcl-freq-control-list = <&CPU2 &CPU3>;
-		qcom,bcl-hotplug-list = <&CPU2 &CPU3>;
-		qcom,bcl-soc-hotplug-list = <&CPU2 &CPU3>;
 		qcom,ibat-monitor {
 			qcom,low-threshold-uamp = <3400000>;
 			qcom,high-threshold-uamp = <4200000>;
-			qcom,mitigation-freq-khz = <576000>;
+			qcom,mitigation-freq-khz = <1324800>;
 			qcom,vph-high-threshold-uv = <3500000>;
 			qcom,vph-low-threshold-uv = <3300000>;
-			qcom,soc-low-threshold = <10>;
+			qcom,soc-low-threshold = <0>;
 			qcom,thermal-handle = <&msm_thermal_freq>;
 		};
 	};
@@ -2841,6 +2946,13 @@
 			qcom,dump-id = <0x23>;
 		};
 	};
+	htc_pnpmgr{
+		compatible = "htc,perf_table";
+		htc,cluster-map = <0x0c>, <0x03>;
+		htc,perf_table = <1036800>, <1036800>, <1036800>, <1036800>, <1036800>,
+			<1036800>, <1036800>, <1036800>, <1036800>, <1036800>;
+
+	};
 
 	qcom_tzlog: tz-log@66bf720 {
 		compatible = "qcom,tz-log";
@@ -2894,7 +3006,9 @@
 				"msm-compress-dsp", "msm-pcm-hostless", "msm-pcm-afe",
 				"msm-lsm-client", "msm-pcm-routing", "msm-cpe-lsm",
 				"msm-compr-dsp";
-		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>, <&dai_hdmi>, <&dai_mi2s>,
+		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>, <&dai_hdmi>,
+				<&dai_pri_mi2s>, <&dai_sec_mi2s>,
+				<&dai_tert_mi2s>, <&dai_quat_mi2s>,
 				<&sb_0_rx>, <&sb_0_tx>, <&sb_1_rx>, <&sb_1_tx>,
 				<&sb_2_rx>, <&sb_2_tx>, <&sb_3_rx>, <&sb_3_tx>,
 				<&sb_4_rx>, <&sb_4_tx>, <&sb_5_tx>, <&afe_pcm_rx>,
@@ -2903,7 +3017,9 @@
 				<&incall_music_rx>, <&incall_music2_rx>,
 				<&sb_5_rx>;
 		asoc-cpu-names = "msm-dai-q6-auxpcm.1", "msm-dai-q6-auxpcm.2",
-				"msm-dai-q6-hdmi.8", "msm-dai-q6-mi2s.2",
+				"msm-dai-q6-hdmi.8", "msm-dai-q6-mi2s.0",
+				"msm-dai-q6-mi2s.1", "msm-dai-q6-mi2s.2",
+				"msm-dai-q6-mi2s.3",
 				"msm-dai-q6-dev.16384", "msm-dai-q6-dev.16385",
 				"msm-dai-q6-dev.16386", "msm-dai-q6-dev.16387",
 				"msm-dai-q6-dev.16388", "msm-dai-q6-dev.16389",
@@ -2917,6 +3033,24 @@
 		asoc-codec = <&stub_codec>;
 		asoc-codec-names = "msm-stub-codec.1";
 	};
+
+//HTC_AUD_START
+/*
+	i2c@75b5000 {
+		richteck_rt5503_amp@52 {
+			compatible = "richtek,rt5503";
+			reg = <0x52>;
+		};
+
+	};
+*/
+	i2c@75b5000{
+		nxp_tfa9888_amp@34 {
+			compatible = "nxp,tfa9888-amp";
+			reg = <0x34>;
+		};
+	};
+//HTC_AUD_END
 
 	qcom,msm-adsp-loader {
 		status = "ok";
@@ -2940,7 +3074,7 @@
 		compatible = "qcom,msm-pcm-dsp";
 		qcom,msm-pcm-dsp-id = <1>;
 		qcom,msm-pcm-low-latency;
-		qcom,latency-level = "ull-pp";
+//HTC_AUDIO	qcom,latency-level = "ull-pp";
 	};
 
 	pcm2: qcom,msm-ultra-low-latency {
@@ -3126,11 +3260,14 @@
 		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <2048000>;
 		qcom,msm-auxpcm-interface = "primary";
 		qcom,msm-cpudai-afe-clk-ver = <2>;
-		pinctrl-names = "default", "sleep";
+		pinctrl-names = "default", "sleep", "ftm"; //HTC_AUD
 		pinctrl-0 = <&pri_aux_pcm_active &pri_aux_pcm_din_active
 			     &pri_aux_pcm_dout_active>;
 		pinctrl-1 = <&pri_aux_pcm_sleep &pri_aux_pcm_din_sleep
 			     &pri_aux_pcm_dout_sleep>;
+//HTC_AUD_START
+		pinctrl-2 = <&pri_aux_ftm &pri_aux_dout_ftm>;
+//HTC_AUD_END
 	};
 
 	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
@@ -3149,7 +3286,7 @@
 
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
-		dai_mi2s: qcom,msm-dai-q6-mi2s-tert {
+		dai_tert_mi2s: qcom,msm-dai-q6-mi2s-tert {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <2>;
 			qcom,msm-mi2s-rx-lines = <2>;
@@ -3368,6 +3505,53 @@
 			qcom,msm-cpudai-tdm-invert-sync = <0>;
 			qcom,msm-cpudai-tdm-data-delay = <0>;
 			qcom,msm-cpudai-tdm-data-align = <0>;
+		};
+	};
+
+	qcom,msm-dai-mi2s {
+		compatible = "qcom,msm-dai-mi2s";
+		dai_pri_mi2s: qcom,msm-dai-q6-mi2s-prim {
+			compatible = "qcom,msm-dai-q6-mi2s";
+			qcom,msm-dai-q6-mi2s-dev-id = <0>;
+			qcom,msm-mi2s-rx-lines = <1>; /* SD0 (1 << 0) */
+			qcom,msm-mi2s-tx-lines = <2>; /* SD1 (1 << 1) */
+			qcom,msm-mi2s-slave = <0>;
+			pinctrl-names = "default", "sleep"; //HTC_AUD
+			/*pinctrl-0 = <&pri_mi2s_active &pri_mi2s_mclk_active &pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+			pinctrl-1 = <&pri_mi2s_sleep &pri_mi2s_mclk_sleep &pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;*/
+		};
+	};
+
+	qcom,msm-dai-mi2s {
+		compatible = "qcom,msm-dai-mi2s";
+		dai_sec_mi2s: qcom,msm-dai-q6-mi2s-sec {
+			compatible = "qcom,msm-dai-q6-mi2s";
+			qcom,msm-dai-q6-mi2s-dev-id = <1>;
+			qcom,msm-mi2s-rx-lines = <2>; /* SD1 (1 << 1) */
+			qcom,msm-mi2s-tx-lines = <1>; /* SD0 (1 << 0) */
+			qcom,msm-mi2s-slave = <0>;
+			qcom,msm-mi2s-ext-mclk = <0>;
+			pinctrl-names = "default", "sleep"; //HTC_AUD
+			pinctrl-0 = <&sec_mi2s_active &sec_mi2s_sd0_active>; /* HTC_AUD */
+			pinctrl-1 = <&sec_mi2s_sleep &sec_mi2s_sd0_sleep>; /* HTC_AUD */
+		};
+	};
+
+	qcom,msm-dai-mi2s {
+		compatible = "qcom,msm-dai-mi2s";
+		dai_quat_mi2s: qcom,msm-dai-q6-mi2s-quat {
+			compatible = "qcom,msm-dai-q6-mi2s";
+			qcom,msm-dai-q6-mi2s-dev-id = <3>;
+//HTC_AUD_START
+			qcom,msm-mi2s-rx-lines = <2>; /* SD1 (1 << 1) */
+			qcom,msm-mi2s-tx-lines = <1>; /* SD0 (0 << 0) */
+//HTC_AUD_END
+			qcom,msm-mi2s-slave = <0>;
+			pinctrl-names = "default", "sleep"; //HTC_AUD
+			/*pinctrl-0 = <&quat_mi2s_active &quat_mi2s_mclk_active &quat_mi2s_sd0_active &quat_mi2s_sd1_active &quat_mi2s_sd2_active &quat_mi2s_sd3_active>;
+			pinctrl-1 = <&quat_mi2s_sleep &quat_mi2s_mclk_sleep &quat_mi2s_sd0_sleep &quat_mi2s_sd1_sleep &quat_mi2s_sd2_sleep &quat_mi2s_sd3_sleep>;*/
+			pinctrl-0 = <&quat_mi2s_active &quat_mi2s_sd0_active &quat_mi2s_sd1_active>; /* HTC_AUD */
+			pinctrl-1 = <&quat_mi2s_sleep &quat_mi2s_sd0_sleep &quat_mi2s_sd1_sleep>; /* HTC_AUD */
 		};
 	};
 
@@ -3738,8 +3922,9 @@
 };
 
 &gdsc_mdss {
-	clock-names = "bus_clk";
-	clocks = <&clock_mmss clk_mdss_axi_clk>;
+	clock-names = "bus_clk", "core_clk";
+	clocks = <&clock_mmss clk_mdss_axi_clk>,
+		 <&clock_mmss clk_mdss_mdp_clk>;
 	parent-supply = <&gdsc_mmagic_mdss>;
 	proxy-supply = <&gdsc_mdss>;
 	qcom,proxy-consumer-enable;
@@ -3828,6 +4013,7 @@
 #include "msm-pm8994.dtsi"
 #include "msm-pmi8994.dtsi"
 #include "msm8996-regulator.dtsi"
+#include "msm-pm8996-pmi8996-vreg-dump.dtsi"
 #include "msm8996-camera.dtsi"
 #include "msm8996-gpu.dtsi"
 #include "msm8996-pm.dtsi"

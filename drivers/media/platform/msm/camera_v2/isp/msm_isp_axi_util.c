@@ -606,7 +606,6 @@ void msm_isp_reset_framedrop(struct vfe_device *vfe_dev,
 			msm_isp_get_framedrop_period(
 			stream_info->frame_skip_pattern);
 	}
-
 	msm_isp_cfg_framedrop_reg(vfe_dev, stream_info);
 	ISP_DBG("%s: init frame drop: %d\n", __func__,
 		stream_info->init_frame_drop);
@@ -790,6 +789,16 @@ void msm_isp_notify(struct vfe_device *vfe_dev, uint32_t event_type,
 				pr_err("%s: PIX0 frame id: %u\n", __func__,
 				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
 			vfe_dev->isp_sof_debug++;
+		
+		if ((vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id < 3)||
+			(vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id == 10)||
+			((vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id%50) == 0))
+		{
+			pr_info("[CAM]%s:(%d)PIX0 frame id: %u\n", __func__, vfe_dev->pdev->id,
+				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id);
+		}
+		
+
 		} else if (frame_src == VFE_RAW_0) {
 			if (vfe_dev->isp_raw0_debug < ISP_SOF_DEBUG_COUNT)
 				pr_err("%s: RAW_0 frame id: %u\n", __func__,
@@ -1151,7 +1160,7 @@ static int  msm_isp_axi_stream_enable_cfg(
 	uint32_t stream_idx = HANDLE_TO_IDX(stream_info->stream_handle);
 	struct dual_vfe_resource *dual_vfe_res = NULL;
 
-	if (stream_idx >= VFE_AXI_SRC_MAX) {
+	if (stream_idx >= MAX_NUM_STREAM) {
 		pr_err("%s: Invalid stream_idx", __func__);
 		goto error;
 	}
@@ -1784,7 +1793,6 @@ static int msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		stream_info->runtime_output_format;
 	if (stream_info->buf_divert &&
 		buf_src != MSM_ISP_BUFFER_SRC_SCRATCH) {
-
 		bufq = vfe_dev->buf_mgr->ops->get_bufq(vfe_dev->buf_mgr,
 			buf->bufq_handle);
 		if (!bufq) {
@@ -2093,7 +2101,7 @@ int msm_isp_axi_halt(struct vfe_device *vfe_dev,
 
 	if (atomic_read(&vfe_dev->error_info.overflow_state) ==
 		OVERFLOW_DETECTED) {
-		ISP_DBG("%s: VFE%d already halted, direct return\n",
+		pr_err("%s: VFE%d already halted, direct return\n",
 			__func__, vfe_dev->pdev->id);
 		return rc;
 	}
@@ -2132,6 +2140,7 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 	uint32_t bufq_handle = 0, bufq_id = 0;
 	struct msm_isp_timestamp timestamp;
 	unsigned long flags;
+        pr_err("%s: E\n", __func__);
 
 	if (!reset_cmd) {
 		pr_err("%s: NULL pointer reset cmd %p\n", __func__, reset_cmd);
@@ -2189,7 +2198,7 @@ int msm_isp_axi_reset(struct vfe_device *vfe_dev,
 
 	if (rc < 0)
 		pr_err("%s Error! reset hw Timed out\n", __func__);
-
+        pr_err("%s: X\n", __func__);
 	return rc;
 }
 
@@ -2201,6 +2210,7 @@ int msm_isp_axi_restart(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 	uint32_t wm_reload_mask = 0x0;
 	unsigned long flags;
+        pr_err("%s: E\n", __func__);
 
 	vfe_dev->buf_mgr->frameId_mismatch_recovery = 0;
 	for (i = 0, j = 0; j < axi_data->num_active_stream &&
@@ -2223,6 +2233,7 @@ int msm_isp_axi_restart(struct vfe_device *vfe_dev,
 	if (rc < 0)
 		pr_err("%s Error restarting HW\n", __func__);
 
+        pr_err("%s: X\n", __func__);
 	return rc;
 }
 
@@ -3436,7 +3447,7 @@ void msm_isp_process_axi_irq(struct vfe_device *vfe_dev,
 					if (comp_info->stream_composite_mask &
 						(1 << wm))
 						msm_isp_cfg_wm_scratch(vfe_dev,
-							wm, pingpong_status);
+							wm, (pingpong_status >> wm) & 0x1);
 				continue;
 			}
 			stream_idx = HANDLE_TO_IDX(comp_info->stream_handle);
@@ -3456,7 +3467,7 @@ void msm_isp_process_axi_irq(struct vfe_device *vfe_dev,
 				pr_err("%s: Invalid handle for wm irq\n",
 					__func__);
 				msm_isp_cfg_wm_scratch(vfe_dev, i,
-					pingpong_status);
+					(pingpong_status >> i) & 0x1);
 				continue;
 			}
 			stream_info = &axi_data->stream_info[stream_idx];

@@ -40,6 +40,7 @@
 #include <linux/usb/gadget.h>
 #include <linux/log2.h>
 #include <linux/configfs.h>
+#include <linux/switch.h>	
 
 /* FUNCTION_SUSPEND: suspend options from usb 3.0 spec Table 9-7 */
 #define FUNC_SUSPEND_OPT_SUSP_MASK BIT(0)
@@ -495,6 +496,10 @@ struct usb_composite_dev {
 	struct list_head		configs;
 	struct list_head		gstrings;
 	struct usb_composite_driver	*driver;
+	struct switch_dev		sw_function_switch_on;
+	struct switch_dev		sw_function_switch_off;
+	struct switch_dev		sw_connect2pc;	
+
 	u8				next_string_id;
 	char				*def_manufacturer;
 

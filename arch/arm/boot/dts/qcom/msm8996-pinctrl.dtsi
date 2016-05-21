@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +19,41 @@
 		#gpio-cells = <2>;
 		interrupt-controller;
 		#interrupt-cells = <2>;
+
+
+//[HTC_FP_START]
+        fpc1020_reset{
+            fpc1020_reset_reset: reset {
+                config{
+                    pins = "gpio131";
+                    drive-strength = <12>;
+                    bias-disable;
+                    output-low;
+                 };
+            };
+            fpc1020_reset_active: active {
+                config{
+                    pins = "gpio131";
+                    drive-strength = <12>;
+                    bias-disable;
+                    output-high;
+                };
+            };
+        };
+
+
+         fpc1020_irq_active {
+            fpc1020_irq_active: active {
+                config{
+                    pins = "gpio86";
+                    drive-strength = <12>;
+                    bias-pull-down;
+ //                   input-enable;
+                };
+            };
+        };
+
+//[HTC_FP_END]
 
 		/* add pingrp for adv7533 */
 		pmx_adv7533: pmx_adv7533 {
@@ -217,8 +252,7 @@
 			};
 		};
 
-
-		blsp1_uart3_active: blsp1_uart3_active {
+                blsp1_uart3_active: blsp1_uart3_active {
 			mux {
 				pins = "gpio45", "gpio46", "gpio47", "gpio48";
 				function = "blsp_uart3";
@@ -243,7 +277,6 @@
 				bias-disable;
 			};
 		};
-
 
 		blsp1_uart6_active: blsp1_uart6_active {
 			mux {
@@ -271,6 +304,60 @@
 			};
 		};
 
+		// [HTC_BT] +++
+		bluetooth_wake_host_pin {
+			bt_wake_host_gpio_on: bt_wake_host_gpio_on {
+				config {
+					pins = "gpio117";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
+
+			bt_wake_host_gpio_off: bt_wake_host_gpio_off {
+				config {
+					pins = "gpio117";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+		};
+		// [HTC_BT] ---
+
+		ohio_pin {
+			req_5v_bst: req_5v_bst {
+				config {
+					pins = "gpio11";
+					drive-strength = <2>;
+					bias-pull-down;
+					output-low;
+				};
+			};
+			power_en_pin: power_en_pin {
+				config {
+					pins = "gpio30";
+					drive-strength = <2>;
+					bias-pull-down;
+					output-low;
+				};
+			};
+
+			cable_det_pin: cable_det_pin {
+				config {
+					pins = "gpio108";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+
+			ohio_interrupt_pin: ohio_interrupt_pin {
+				config {
+					pins = "gpio124";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+		};
 
 		pmx_mdss: pmx_mdss {
 			mdss_dsi_active: mdss_dsi_active {
@@ -299,6 +386,16 @@
 				};
 			};
 		};
+
+//HTC_AUD_START
+		headset_gpios: headset_gpios {
+			config {
+				pins = "gpio63", "gpio91";
+				drive-strength = <2>;
+				bias-disable;	// NO PULL
+			};
+		};
+//HTC_AUD_END
 
 		mdss_te_active: mdss_te_active {
 			mux {
@@ -350,8 +447,8 @@
 
 			config {
 				pins = "gpio34";
-				bias-pull-down;
-				drive-strength = <16>;
+				bias-disable;
+				drive-strength = <2>;
 			};
 		};
 
@@ -363,7 +460,7 @@
 
 			config {
 				pins = "gpio34";
-				bias-pull-down;
+				bias-disable;
 				drive-strength = <2>;
 			};
 		};
@@ -390,7 +487,7 @@
 			config {
 				pins = "gpio32", "gpio33";
 				drive-strength = <2>;
-				bias-pull-up;
+				bias-pull-down;
 			};
 		};
 
@@ -416,7 +513,7 @@
 			config {
 				pins = "gpio31";
 				drive-strength = <2>;
-				bias-pull-up;
+				bias-pull-down;
 			};
 		};
 
@@ -526,6 +623,13 @@
 				drive-strength = <16>;	/* 16 MA */
 			};
 		};
+		sdc2_clk_on_sdr104: clk_on_sdr104 {
+			config {
+				pins = "sdc2_clk";
+				bias-disable;		/* NO pull */
+				drive-strength = <16>;	/* 16 MA */
+			};
+		};
 
 		sdc2_clk_off: sdc2_clk_off {
 			config {
@@ -575,7 +679,7 @@
 
 			config {
 				pins = "gpio95";
-				bias-pull-up;		/* pull up */
+				bias-disable;		/* No PULL */
 				drive-strength = <16>;	/* 16 MA */
 			};
 		};
@@ -588,10 +692,45 @@
 
 			config {
 				pins = "gpio95";
-				bias-pull-up;		/* pull up */
+				bias-disable;           /* No PULL */
 				drive-strength = <2>;	/* 2 MA */
 			};
 		};
+
+		/* Sensor Hub */
+		sensor_hub {
+			shub_boot_sel:hub_boot_sel {
+				config {};
+			};
+			mcugpio_int: mcugpio_int {
+				config {};
+			};
+			cpu2mcu_int: cpu2mcu_int {
+				config {};
+			};
+			shub_rst: shub_rst {
+				config {};
+			};
+		};
+
+		/* Laser Sensor */
+		laser_sensor {
+			laser_pwdn:laser_pwdn {
+				config {
+					pins = "gpio94";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+			laser_int:laser_int {
+				config {
+					pins = "gpio106";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+		};
+
 
 		sdc2_cd_on_sbc: sdc2_cd_on_sbc {
 			mux {
@@ -647,6 +786,60 @@
 			};
 		};
 
+		pmx_ts {
+			ts_intr_active: ts_intr_active {
+				mux {
+					//pins = "gpio125";
+					//function = "gpio";
+				};
+
+				config {
+					//pins = "gpio125";
+					//drive-strength = <2>;
+					//bias-pull-up;
+				};
+			};
+			ts_intr_suspend: ts_intr_suspend {
+				mux {
+					//pins = "gpio125";
+					//function = "gpio";
+				};
+
+				config {
+					//pins = "gpio125";
+					//drive-strength = <2>;
+					//bias-pull-up;
+				};
+			};
+
+			ts_rst_active: ts_rst_active {
+				mux {
+					//pins = "gpio89";
+					//function = "gpio";
+				};
+
+				config {
+					//pins = "gpio89";
+					//drive-strength = <2>;
+					//bias-disable; /* No PULL */
+					//output-high;
+				};
+			};
+			ts_rst_suspend: ts_rst_suspend {
+				mux {
+					//pins = "gpio89";
+					//function = "gpio";
+				};
+
+				config {
+					//pins = "gpio89";
+					//drive-strength = <2>;
+					//bias-disable;
+					//output-high;
+				};
+			};
+		};
+
 		ts_mux_sbc {
 			ts_active_sbc: ts_active_sbc {
 				mux {
@@ -674,6 +867,7 @@
 				};
 			};
 		};
+
 		i2c_12 {
                         i2c_12_active: i2c_12_active {
 				mux {
@@ -683,7 +877,7 @@
 
 				config {
 					pins = "gpio87", "gpio88";
-					drive-strength = <2>;
+					drive-strength = <8>;
 					bias-disable;
 				};
 			};
@@ -691,12 +885,12 @@
 			i2c_12_sleep: i2c_12_sleep {
 				mux {
 					pins = "gpio87", "gpio88";
-					function = "blsp_i2c12";
+					function = "gpio";
 				};
 
 				config {
 					pins = "gpio87", "gpio88";
-					drive-strength = <2>;
+					drive-strength = <8>;
 					bias-pull-down;
 				};
 			};
@@ -711,7 +905,7 @@
 
 				config {
 					pins = "gpio27", "gpio28";
-					drive-strength = <2>;
+					drive-strength = <8>;
 					bias-disable;
 				};
 			};
@@ -724,8 +918,8 @@
 
 				config {
 					pins = "gpio27", "gpio28";
-					drive-strength = <2>;
-					bias-pull-up;
+					drive-strength = <8>;
+					bias-disable;
 				};
 			};
 		};
@@ -739,7 +933,7 @@
 
 				config {
 					pins = "gpio55", "gpio56";
-					drive-strength = <2>;
+					drive-strength = <8>;
 					bias-disable;
 				};
 			};
@@ -752,8 +946,8 @@
 
 				config {
 					pins = "gpio55", "gpio56";
-					drive-strength = <2>;
-					bias-pull-up;
+					drive-strength = <8>;
+					bias-disable;
 				};
 			};
 		};
@@ -767,7 +961,7 @@
 
 				config {
 					pins = "gpio6", "gpio7";
-					drive-strength = <4>;
+					drive-strength = <8>;
 					bias-disable;
 				};
 			};
@@ -780,8 +974,36 @@
 
 				config {
 					pins = "gpio6", "gpio7";
-					drive-strength = <4>;
-					bias-pull-up;
+					drive-strength = <8>;
+					bias-disable;
+				};
+			};
+		};
+
+		i2c_9 {
+			i2c_9_active: i2c_9_active {
+				mux {
+					pins = "gpio51", "gpio52";
+					function = "blsp_i2c9";
+				};
+
+				config {
+					pins = "gpio51", "gpio52";
+					drive-strength = <8>;
+					bias-disable;
+				};
+			};
+
+			i2c_9_sleep: i2c_9_sleep {
+				mux {
+					pins = "gpio51", "gpio52";
+					function = "blsp_i2c9";
+				};
+
+				config {
+					pins = "gpio51", "gpio52";
+					drive-strength = <8>;
+					bias-disable;
 				};
 			};
 		};
@@ -789,12 +1011,10 @@
 		pmx_fm_int {
 			fm_int_active: fm_int_active {
 				mux {
-					pins = "gpio38";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio38";
 					drive-strength = <16>;
 					bias-pull-up;
 				};
@@ -802,12 +1022,10 @@
 
 		fm_int_suspend: fm_int_suspend {
 				mux {
-					pins = "gpio38";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio38";
 					drive-strength = <16>;
 					bias-pull-up;
 				};
@@ -817,12 +1035,12 @@
 		pmx_fm_status {
 			fm_status_int_active: fm_status_int_active {
 				mux {
-					pins = "gpio78";
+					//pins = "gpio78";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio78";
+					//pins = "gpio78";
 					drive-strength = <16>;
 					bias-pull-up;
 				};
@@ -830,12 +1048,12 @@
 
 			fm_status_int_suspend: fm_status_int_suspend {
 				mux {
-					pins = "gpio78";
+					//pins = "gpio78";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio78";
+					//pins = "gpio78";
 					drive-strength = <16>;
 					bias-pull-up;
 				};
@@ -931,14 +1149,14 @@
 				mux {
 					pins = "gpio0", "gpio1",
 						"gpio2", "gpio3";
-					function = "blsp_spi1";
+					function = "gpio";
 				};
 
 				config {
 					pins = "gpio0", "gpio1",
 						"gpio2", "gpio3";
-					drive-strength = <6>;
-					bias-disable;
+					drive-strength = <2>;
+					bias-pull-down;
 				};
 			};
 
@@ -946,14 +1164,14 @@
 				mux {
 					pins = "gpio0", "gpio1",
 						"gpio2", "gpio3";
-					function = "blsp_spi1";
+					function = "gpio";
 				};
 
 				config {
 					pins = "gpio0", "gpio1",
 						"gpio2", "gpio3";
-					drive-strength = <6>;
-					bias-disable;
+					drive-strength = <2>;
+					bias-pull-down;
 				};
 			};
 		};
@@ -961,27 +1179,55 @@
 		spi_0_cs {
 			spi_0_cs_active: spi_0_cs_active {
 				mux {
-					pins = "gpio24", "gpio90";
-					function = "blsp1_spi";
+					pins = "gpio90";
+					function = "gpio";
 				};
 
 				config {
-					pins = "gpio24", "gpio90";
-					drive-strength = <6>;
-					bias-pull-up;
+					pins = "gpio90";
+					drive-strength = <2>;
+					bias-pull-down;
 				};
 			};
 
 			spi_0_cs_sleep: spi_0_cs_sleep {
 				mux {
-					pins = "gpio24", "gpio90";
-					function = "blsp1_spi";
+					pins = "gpio90";
+					function = "gpio";
 				};
 
 				config {
-					pins = "gpio24", "gpio90";
-					drive-strength = <6>;
-					bias-pull-up;
+					pins = "gpio90";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+		};
+
+		spi_2 {
+			spi_2_active: spi_2_active {
+				mux {
+					pins = "gpio45", "gpio46", "gpio47", "gpio48";
+					function = "blsp_spi3";
+				};
+
+				config {
+					pins = "gpio45", "gpio46", "gpio47", "gpio48";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+
+			spi_2_sleep: spi_2_sleep {
+				mux {
+					pins = "gpio45", "gpio46", "gpio47", "gpio48";
+					function = "blsp_spi3";
+				};
+
+				config {
+					pins = "gpio45", "gpio46", "gpio47", "gpio48";
+					drive-strength = <2>;
+					bias-pull-down;
 				};
 			};
 		};
@@ -1105,7 +1351,12 @@
 				config {
 					pins = "gpio35";
 					drive-strength = <2>;
-					bias-pull-down;
+					/* HTC_WIFI_START */
+					// ** remove orignal code
+					//bias-pull-down;
+					// ** add new code
+					bias-disable;
+					/* HTC_WIFI_END */
 				};
 			};
 
@@ -1118,7 +1369,12 @@
 				config {
 					pins = "gpio37";
 					drive-strength = <2>;
-					bias-pull-up;
+					/* HTC_WIFI_START */
+					// ** remove original code
+					//bias-pull-up;
+					// ** add new code
+					bias-disable;
+					/* HTC_WIFI_END */
 				};
 			};
 
@@ -1159,18 +1415,16 @@
 				config {
 					pins = "gpio131";
 					drive-strength = <2>;
-					bias-pull-up;
+					bias-pull-down;
 				};
 			};
 
 			pcie1_perst_default: pcie1_perst_default {
 				mux {
-					pins = "gpio130";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio130";
 					drive-strength = <2>;
 					bias-pull-down;
 				};
@@ -1198,7 +1452,7 @@
 				config {
 					pins = "gpio131";
 					drive-strength = <2>;
-					bias-disable;
+					bias-pull-down;
 				};
 			};
 
@@ -1283,49 +1537,6 @@
 			};
 		};
 
-		wcd9xxx_intr {
-			wcd_intr_default: wcd_intr_default{
-				mux {
-					pins = "gpio54";
-					function = "gpio";
-				};
-
-				config {
-					pins = "gpio54";
-					drive-strength = <2>; /* 2 mA */
-					bias-pull-down; /* pull down */
-					input-enable;
-				};
-			};
-		};
-
-		cdc_reset_ctrl {
-			cdc_reset_sleep: cdc_reset_sleep {
-				mux {
-					pins = "gpio64";
-					function = "gpio";
-				};
-				config {
-					pins = "gpio64";
-					drive-strength = <16>;
-					bias-disable;
-					output-low;
-				};
-			};
-			cdc_reset_active:cdc_reset_active {
-				mux {
-					pins = "gpio64";
-					function = "gpio";
-				};
-				config {
-					pins = "gpio64";
-					drive-strength = <16>;
-					bias-pull-down;
-					output-high;
-				};
-			};
-		};
-
 		pri_aux_pcm {
 			pri_aux_pcm_sleep: pri_aux_pcm_sleep {
 				mux {
@@ -1339,6 +1550,20 @@
 					bias-pull-down;         /* PULL DOWN */
 				};
 			};
+//HTC_AUD_START
+			pri_aux_ftm: pri_aux_ftm {
+				mux {
+					pins = "gpio65", "gpio66", "gpio67";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio65", "gpio66", "gpio67";
+					drive-strength = <2>;   /* 2 mA */
+					bias-disable;           /* NO PULL */
+				};
+			};
+//HTC_AUD_END
 			pri_aux_pcm_active: pri_aux_pcm_active {
 				mux {
 					pins = "gpio65", "gpio66";
@@ -1394,6 +1619,20 @@
 					bias-pull-down;         /* PULL DOWN */
 				};
 			};
+//HTC_AUD_START
+			pri_aux_dout_ftm: pri_aux_dout_ftm {
+				mux {
+					pins = "gpio68";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio68";
+					drive-strength = <2>;   /* 2 mA */
+					bias-disable;           /* NO PULL */
+				};
+			};
+//HTC_AUD_END
 			pri_aux_pcm_dout_active: pri_aux_pcm_dout_active {
 				mux {
 					pins = "gpio68";
@@ -1438,17 +1677,56 @@
 		cnss_pins {
 			cnss_default: cnss_default {
 				mux {
-					pins = "gpio46";
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio46";
 					drive-strength = <16>;
 					bias-pull-down;
 				};
 			};
 		};
+
+		/* HTC_WIFI_START */
+		bcm_pins {
+			wlan_wake_host: wlan_wake_host {
+				mux {
+					pins = "gpio122";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio122";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			wlan_seci_out_init: wlan_seci_out_init {
+				mux {
+					pins = "gpio25";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio25";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			wlan_seci_in_init: wlan_seci_in_init {
+				mux {
+					pins = "gpio26";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio26";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+		};
+		/* HTC_WIFI_END */
 
 		tert_mi2s {
 			tert_mi2s_sleep: tert_mi2s_sleep {
@@ -1471,9 +1749,8 @@
 
 				config {
 					pins = "gpio75", "gpio76";
-					drive-strength = <8>;   /* 8 mA */
-					bias-disable;           /* NO PULL */
-					output-high;
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
 				};
 			};
 		};
@@ -1499,33 +1776,163 @@
 
 				config {
 					pins = "gpio77";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+		};
+
+		prim_mi2s {
+			pri_mi2s_sleep: pri_mi2s_sleep {
+				prim_mi2s {
+					pins = "gpio65", "gpio66";
+					function = "pri_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			pri_mi2s_active: pri_mi2s_active {
+				prim_mi2s {
+					pins = "gpio65", "gpio66";
+					function = "pri_mi2s";
+					drive-strength = <8>;   /* 8 mA */
+					bias-disable;           /* NO PULL */
+					output-high;
+				};
+			};
+		};
+
+		prim_mi2s_sd0 {
+			pri_mi2s_sd0_sleep: pri_mi2s_sd0_sleep {
+				prim_mi2s_sd0 {
+					pins = "gpio67";
+					function = "pri_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			pri_mi2s_sd0_active: pri_mi2s_sd0_active {
+				prim_mi2s_sd0 {
+					pins = "gpio67";
+					function = "pri_mi2s";
 					drive-strength = <8>;   /* 8 mA */
 					bias-disable;           /* NO PULL */
 				};
 			};
 		};
 
+		prim_mi2s_sd1 {
+			pri_mi2s_sd1_sleep: pri_mi2s_sd1_sleep {
+				prim_mi2s_sd1 {
+					pins = "gpio68";
+					function = "pri_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			pri_mi2s_sd1_active: pri_mi2s_sd1_active {
+				prim_mi2s_sd1 {
+					pins = "gpio68";
+					function = "pri_mi2s";
+					drive-strength = <8>;   /* 8 mA */
+					bias-disable;           /* NO PULL */
+				};
+			};
+		};
+
+		sec_mi2s {
+			sec_mi2s_sleep: sec_mi2s_sleep {
+				sec_mi2s {
+					pins = "gpio80", "gpio81";
+					function = "sec_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			sec_mi2s_active: sec_mi2s_active {
+				sec_mi2s {
+					pins = "gpio80", "gpio81";
+					function = "sec_mi2s";
+					drive-strength = <8>;   /* 8 mA */
+					bias-pull-down;         /* PULL DOWN */ /* HTC_AUD */
+				};
+			};
+		};
+
+//HTC_AUD_START
+//		sec_mi2s_mclk {
+//			sec_mi2s_mclk_sleep: sec_mi2s_mclk_sleep {
+//				sec_mi2s {
+//					pins = "gpio79";
+//					function = "sec_mi2s";
+//					drive-strength = <2>;   /* 2 mA */
+//					bias-pull-down;         /* PULL DOWN */
+//				};
+//			};
+//			sec_mi2s_mclk_active: sec_mi2s_mclk_active {
+//				sec_mi2s {
+//					pins = "gpio79";
+//					function = "sec_mi2s";
+//					drive-strength = <8>;   /* 8 mA */
+//					bias-disable;           /* NO PULL */
+//					output-high;
+//				};
+//			};
+//		};
+//HTC_AUD_END
+		sec_mi2s_sd0 {
+			sec_mi2s_sd0_sleep: sec_mi2s_sd0_sleep {
+				sec_mi2s_sd0 {
+					pins = "gpio82";
+					function = "sec_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			sec_mi2s_sd0_active: sec_mi2s_sd0_active {
+				sec_mi2s_sd0 {
+					pins = "gpio82";
+					function = "sec_mi2s";
+					drive-strength = <8>;   /* 8 mA */
+					bias-pull-down;         /* PULL DOWN */ /* HTC_AUD */
+				};
+			};
+		};
+
+//HTC_AUD_START
+//		sec_mi2s_sd1 {
+//			sec_mi2s_sd1_sleep: sec_mi2s_sd1_sleep {
+//				sec_mi2s_sd1 {
+//					pins = "gpio83";
+//					function = "sec_mi2s";
+//					drive-strength = <2>;   /* 2 mA */
+//					bias-pull-down;         /* PULL DOWN */
+//				};
+//			};
+//			sec_mi2s_sd1_active: sec_mi2s_sd1_active {
+//				sec_mi2s_sd1 {
+//					pins = "gpio83";
+//					function = "sec_mi2s";
+//					drive-strength = <8>;   /* 8 mA */
+//					bias-disable;           /* NO PULL */
+//				};
+//			};
+//		};
+//HTC_AUD_END
+
 		quat_mi2s {
 			quat_mi2s_sleep: quat_mi2s_sleep {
-				mux {
+				quat_mi2s {
 					pins = "gpio58", "gpio59";
 					function = "qua_mi2s";
-				};
-
-				config {
-					pins = "gpio58", "gpio59";
 					drive-strength = <2>;   /* 2 mA */
 					bias-pull-down;         /* PULL DOWN */
 				};
 			};
 			quat_mi2s_active: quat_mi2s_active {
-				mux {
+				quat_mi2s {
 					pins = "gpio58", "gpio59";
 					function = "qua_mi2s";
-				};
-
-				config {
-					pins = "gpio58", "gpio59";
 					drive-strength = <8>;   /* 8 mA */
 					bias-disable;           /* NO PULL */
 					output-high;
@@ -1535,30 +1942,81 @@
 
 		quat_mi2s_sd0 {
 			quat_mi2s_sd0_sleep: quat_mi2s_sd0_sleep {
-				mux {
+				quat_mi2s_sd0 {
 					pins = "gpio60";
 					function = "qua_mi2s";
-				};
-
-				config {
-					pins = "gpio60";
 					drive-strength = <2>;   /* 2 mA */
 					bias-pull-down;         /* PULL DOWN */
 				};
 			};
 			quat_mi2s_sd0_active: quat_mi2s_sd0_active {
-				mux {
+				quat_mi2s_sd0 {
 					pins = "gpio60";
 					function = "qua_mi2s";
-				};
-
-				config {
-					pins = "gpio60";
 					drive-strength = <8>;   /* 8 mA */
 					bias-disable;           /* NO PULL */
 				};
 			};
 		};
+
+		quat_mi2s_sd1 {
+			quat_mi2s_sd1_sleep: quat_mi2s_sd1_sleep {
+				quat_mi2s_sd1 {
+					pins = "gpio61";
+					function = "qua_mi2s";
+					drive-strength = <2>;   /* 2 mA */
+					bias-pull-down;         /* PULL DOWN */
+				};
+			};
+			quat_mi2s_sd1_active: quat_mi2s_sd1_active {
+				quat_mi2s_sd1 {
+					pins = "gpio61";
+					function = "qua_mi2s";
+					drive-strength = <8>;   /* 8 mA */
+					bias-disable;           /* NO PULL */
+				};
+			};
+		};
+
+//HTC_AUD_START
+//		quat_mi2s_sd2 {
+//			quat_mi2s_sd2_sleep: quat_mi2s_sd2_sleep {
+//				quat_mi2s_sd2 {
+//					pins = "gpio62";
+//					function = "qua_mi2s";
+//					drive-strength = <2>;   /* 2 mA */
+//					bias-pull-down;         /* PULL DOWN */
+//				};
+//			};
+//			quat_mi2s_sd2_active: quat_mi2s_sd2_active {
+//				quat_mi2s_sd2 {
+//					pins = "gpio62";
+//					function = "qua_mi2s";
+//					drive-strength = <8>;   /* 8 mA */
+//					bias-disable;           /* NO PULL */
+//				};
+//			};
+//		};
+//
+//		quat_mi2s_sd3 {
+//			quat_mi2s_sd3_sleep: quat_mi2s_sd3_sleep {
+//				quat_mi2s_sd3 {
+//					pins = "gpio63";
+//					function = "qua_mi2s";
+//					drive-strength = <2>;   /* 2 mA */
+//					bias-pull-down;         /* PULL DOWN */
+//				};
+//			};
+//			quat_mi2s_sd3_active: quat_mi2s_sd3_active {
+//				quat_mi2s_sd3 {
+//					pins = "gpio63";
+//					function = "qua_mi2s";
+//					drive-strength = <8>;   /* 8 mA */
+//					bias-disable;           /* NO PULL */
+//				};
+//			};
+//		};
+//HTC_AUD_END
 
 		tert_tdm {
 			tert_tdm_sleep: tert_tdm_sleep {
@@ -1749,6 +2207,7 @@
 				pins = "gpio17","gpio18";
 				bias-pull-down; /* PULL DOWN */
 				drive-strength = <2>; /* 2 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
@@ -1777,6 +2236,7 @@
 				pins = "gpio19","gpio20";
 				bias-pull-down; /* PULL DOWN */
 				drive-strength = <2>; /* 2 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
@@ -1791,7 +2251,7 @@
 			config {
 				pins = "gpio13";
 				bias-disable; /* No PULL */
-				drive-strength = <2>; /* 2 MA */
+				drive-strength = <8>; /*HTC modify 8 MA */
 			};
 		};
 
@@ -1805,36 +2265,39 @@
 
 			config {
 				pins = "gpio13";
-				bias-pull-down; /* PULL DOWN */
-				drive-strength = <2>; /* 2 MA */
+				bias-disable; /*HTC modify No PULL */
+				drive-strength = <2>; /*HTC modify 8 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
 		cam_sensor_rear_active: cam_sensor_rear_active {
 			/* RESET, STANDBY */
 			mux {
-				pins = "gpio30";
+				pins = "gpio93", "gpio83"; /*HTC modify */
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio30","gpio29";
+				pins = "gpio93", "gpio83"; /*HTC modify */
 				bias-disable; /* No PULL */
 				drive-strength = <2>; /* 2 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
 		cam_sensor_rear_suspend: cam_sensor_rear_suspend{
 			/* RESET, STANDBY */
 			mux {
-				pins = "gpio30","gpio29";
+				pins = "gpio93", "gpio83"; /*HTC modify */
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio30","gpio29";
+				pins = "gpio93", "gpio83"; /*HTC modify */
 				bias-disable; /* No PULL */
 				drive-strength = <2>; /* 2 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
@@ -1903,7 +2366,7 @@
 			config {
 				pins = "gpio14";
 				bias-disable; /* No PULL */
-				drive-strength = <2>; /* 2 MA */
+				drive-strength = <8>; /*HTC modify 8 MA */
 			};
 		};
 
@@ -1917,20 +2380,21 @@
 
 			config {
 				pins = "gpio14";
-				bias-pull-down; /* PULL DOWN */
-				drive-strength = <2>; /* 2 MA */
+				bias-disable; /*HTC modify No PULL */
+				drive-strength = <2>; /*HTC modify 8 MA */
+				output-low; /*HTC ADD*/
 			};
 		};
 
 		cam_sensor_rear2_active: cam_sensor_rear2_active {
 			/* RESET, STANDBY */
 			mux {
-				pins = "gpio63","gpio62";
+				pins = "gpio23"; /*HTC modify*/
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio63","gpio62";
+				pins = "gpio23"; /*HTC modify*/
 				bias-disable; /* No PULL */
 				drive-strength = <2>; /* 2 MA */
 			};
@@ -1940,14 +2404,15 @@
 			cam_sensor_rear2_suspend: cam_sensor_rear2_suspend{
 				/* RESET, STANDBY */
 				mux {
-					pins = "gpio63","gpio62";
+					pins = "gpio23"; /*HTC modify*/
 					function = "gpio";
 				};
 
 				config {
-					pins = "gpio63","gpio62";
+					pins = "gpio23"; /*HTC modify*/
 					bias-disable; /* No PULL */
 					drive-strength = <2>; /* 2 MA */
+					output-low; /*HTC ADD*/
 				};
 			};
 		};
@@ -1985,59 +2450,33 @@
 		cam_sensor_front_active: cam_sensor_front_active{
 			/* RESET, STANDBY */
 			mux {
-				pins = "gpio23","gpio26";
+				pins = "gpio23";
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio23","gpio26";
+				pins = "gpio23";
 				bias-disable; /* No PULL */
-				drive-strength = <2>; /* 2 MA */
+				drive-strength = <2>; /* HTC Modify */
 			};
 		};
 
 		cam_sensor_front_suspend: cam_sensor_front_suspend{
 			/* RESET, STANDBY */
 			mux {
-				pins = "gpio23","gpio26";
+				pins = "gpio23";
 				function = "gpio";
 			};
 
 			config {
-				pins = "gpio23","gpio26";
+				pins = "gpio23";
 				bias-disable; /* No PULL */
-				drive-strength = <2>; /* 2 MA */
+				drive-strength = <2>; /* HTC Modify */
+				output-low; /*HTC ADD*/
 			};
 		};
 
 		/* CoreSight */
-		seta_1: seta_1 {
-			mux {
-				pins = "gpio27";
-				function = "gpio";
-			};
-
-			config {
-				pins = "gpio27";
-				function = "qdss_tracectl_a";
-				drive-strength = <16>;
-				bias-disable;
-			};
-		};
-
-		seta_2: seta_2 {
-			mux {
-				pins = "gpio28";
-				function = "qdss_tracectl_a";
-			};
-
-			config {
-				pins = "gpio28";
-				drive-strength = <16>;
-				bias-disable;
-			};
-		};
-
 		seta_3: seta_3 {
 			mux {
 				pins = "gpio53";
@@ -2207,7 +2646,7 @@
 			};
 		};
 
-		seta_16: seta_16 {
+/*		seta_16: seta_16 {
 			mux {
 				pins = "gpio87";
 				function = "qdss_tracedata_a";
@@ -2218,7 +2657,7 @@
 				drive-strength = <16>;
 				bias-disable;
 			};
-		};
+		};*/
 
 		seta_17: seta_17 {
 			mux {
@@ -2391,12 +2830,10 @@
 
 		setb_12: setb_12 {
 			mux {
-				pins = "gpio29";
 				function = "qdss_tracedata_b";
 			};
 
 			config {
-				pins = "gpio29";
 				drive-strength = <16>;
 				bias-disable;
 			};
@@ -2467,7 +2904,7 @@
 			};
 		};
 
-		setb_18: setb_18 {
+/*		setb_18: setb_18 {
 			mux {
 				pins = "gpio94";
 				function = "qdss_tracectl_b";
@@ -2478,7 +2915,7 @@
 				drive-strength = <16>;
 				bias-disable;
 			};
-		};
+		};*/
 
 		trigout_a: trigout_a {
 			mux {
@@ -2528,19 +2965,19 @@
 				pins = "gpio93"; /* TSIF1 CLK */
 				function = "tsif2_clk";
 			};
-			tsif2_en {
-				pins = "gpio94"; /* TSIF1 Enable */
-				function = "tsif2_en";
-			};
+			/*tsif2_en {
+				pins = "gpio94";*/ /* TSIF1 Enable */
+				/*function = "tsif2_en";
+			};*/
 			tsif2_data {
 				pins = "gpio95"; /* TSIF1 DATA */
 				function = "tsif2_data";
 			};
-			signals_cfg {
+			/*signals_cfg {
 				pins = "gpio93", "gpio94", "gpio95";
-				drive_strength = <2>;	/* 2 mA */
-				bias-pull-down;		/* pull down */
-			};
+				drive_strength = <2>;*/	/* 2 mA */
+				/*bias-pull-down;*/		/* pull down */
+			/*};*/
 		};
 
 		/* sync signal is only used if configured to mode-2 */

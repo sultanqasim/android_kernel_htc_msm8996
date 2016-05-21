@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -127,6 +127,7 @@ struct cpe_lsm_lab {
 	wait_queue_head_t period_wait;
 	struct completion comp;
 	struct completion thread_complete;
+	bool is_buf_allocated;
 };
 
 struct cpe_priv {
@@ -329,6 +330,8 @@ static int msm_cpe_lsm_lab_stop(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 	afe_ops = &cpe->afe_ops;
 	session = lsm_d->lsm_session;
 	if (rtd->cpu_dai)
@@ -369,7 +372,7 @@ static int msm_cpe_lsm_lab_stop(struct snd_pcm_substream *substream)
 	}
 
 	rc = dma_data->dai_channel_ctl(dma_data, rtd->cpu_dai,
-				       MSM_DAI_SLIM_PRE_DISABLE);
+			MSM_DAI_SLIM_PRE_DISABLE);
 	if (rc)
 		dev_err(rtd->dev,
 			"%s: PRE_DISABLE failed, err = %d\n",
@@ -383,9 +386,8 @@ static int msm_cpe_lsm_lab_stop(struct snd_pcm_substream *substream)
 		dev_err(rtd->dev,
 			"%s: PRE ch teardown failed, err = %d\n",
 			__func__, rc);
-
 	rc = dma_data->dai_channel_ctl(dma_data, rtd->cpu_dai,
-				       MSM_DAI_SLIM_DISABLE);
+			MSM_DAI_SLIM_DISABLE);
 	if (rc)
 		dev_err(rtd->dev,
 			"%s: DISABLE failed, err = %d\n",
@@ -589,6 +591,11 @@ static int msm_cpe_lab_thread(void *data)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops) {
+		rc = -EINVAL;
+		goto done;
+	}
+
 	afe_ops = &cpe->afe_ops;
 
 	rc = lsm_ops->lab_ch_setup(cpe->core_handle,
@@ -601,8 +608,7 @@ static int msm_cpe_lab_thread(void *data)
 		goto done;
 	}
 
-	rc = dma_data->dai_channel_ctl(dma_data, rtd->cpu_dai,
-				       MSM_DAI_SLIM_ENABLE);
+	rc = dma_data->dai_channel_ctl(dma_data, rtd->cpu_dai, true);
 	if (rc) {
 		dev_err(rtd->dev,
 			"%s: open data failed %d\n", __func__, rc);
@@ -787,6 +793,8 @@ static int msm_cpe_lsm_open(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 	lsm_d = kzalloc(sizeof(struct cpe_lsm_data), GFP_KERNEL);
 	if (!lsm_d) {
 		dev_err(rtd->dev,
@@ -878,6 +886,8 @@ static int msm_cpe_lsm_close(struct snd_pcm_substream *substream)
 	}
 
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	afe_ops = &cpe->afe_ops;
 	afe_cfg = &(lsm_d->lsm_session->afe_port_cfg);
@@ -1051,6 +1061,8 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	switch (cmd) {
 	case SNDRV_LSM_STOP_LAB:
@@ -1102,25 +1114,29 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 		}
 
 		if (session->lab_enable) {
-			rc = msm_cpe_lab_buf_alloc(substream,
-						   session, dma_data);
-			if (IS_ERR_VALUE(rc)) {
-				dev_err(rtd->dev,
-					"%s: lab buffer alloc failed, err = %d\n",
-					__func__, rc);
-				return rc;
+			if (!lab_d->is_buf_allocated) {
+				rc = msm_cpe_lab_buf_alloc(substream,
+							   session, dma_data);
+				if (IS_ERR_VALUE(rc)) {
+					dev_err(rtd->dev,
+						"%s: lab buffer alloc failed, err = %d\n",
+						__func__, rc);
+					return rc;
+				}
+
+				lab_d->is_buf_allocated = true;
+				dma_buf->dev.type = SNDRV_DMA_TYPE_DEV;
+				dma_buf->dev.dev = substream->pcm->card->dev;
+				dma_buf->private_data = NULL;
+				dma_buf->area = lab_d->pcm_buf[0].mem;
+				dma_buf->addr =  lab_d->pcm_buf[0].phys;
+				dma_buf->bytes = (lsm_d->hw_params.buf_sz *
+						lsm_d->hw_params.period_count);
+				init_completion(&lab_d->thread_complete);
+				snd_pcm_set_runtime_buffer(substream,
+						&substream->dma_buffer);
 			}
 
-			dma_buf->dev.type = SNDRV_DMA_TYPE_DEV;
-			dma_buf->dev.dev = substream->pcm->card->dev;
-			dma_buf->private_data = NULL;
-			dma_buf->area = lab_d->pcm_buf[0].mem;
-			dma_buf->addr =  lab_d->pcm_buf[0].phys;
-			dma_buf->bytes = (lsm_d->hw_params.buf_sz *
-					lsm_d->hw_params.period_count);
-			init_completion(&lab_d->thread_complete);
-			snd_pcm_set_runtime_buffer(substream,
-						   &substream->dma_buffer);
 			rc = lsm_ops->lsm_lab_control(cpe->core_handle,
 					session, true);
 			if (IS_ERR_VALUE(rc)) {
@@ -1161,6 +1177,8 @@ static int msm_cpe_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 					__func__, rc);
 				return rc;
 			}
+
+			lab_d->is_buf_allocated = false;
 		}
 	break;
 	case SNDRV_LSM_REG_SND_MODEL_V2:
@@ -1558,6 +1576,8 @@ static int msm_cpe_lsm_lab_start(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 	lab_d = &lsm_d->lab;
 	afe_ops = &cpe->afe_ops;
 	hw_params = &lsm_d->hw_params;
@@ -1675,8 +1695,12 @@ static int msm_cpe_lsm_set_epd(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	if (p_info->param_size != sizeof(epd_thres)) {
 		dev_err(rtd->dev,
@@ -1723,8 +1747,12 @@ static int msm_cpe_lsm_set_mode(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	if (p_info->param_size != sizeof(det_mode)) {
 		dev_err(rtd->dev,
@@ -1771,8 +1799,12 @@ static int msm_cpe_lsm_set_gain(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	if (p_info->param_size != sizeof(gain)) {
 		dev_err(rtd->dev,
@@ -1819,8 +1851,12 @@ static int msm_cpe_lsm_set_conf(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	session->num_confidence_levels =
 			p_info->param_size;
@@ -1862,8 +1898,12 @@ static int msm_cpe_lsm_reg_model(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	lsm_ops->lsm_get_snd_model_offset(cpe->core_handle,
 			session, &offset);
@@ -1928,8 +1968,12 @@ static int msm_cpe_lsm_dereg_model(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	rc = lsm_ops->lsm_set_one_param(cpe->core_handle,
 				session, p_info, NULL,
@@ -1958,8 +2002,12 @@ static int msm_cpe_lsm_set_custom(struct snd_pcm_substream *substream,
 	rtd = substream->private_data;
 	lsm_d = cpe_get_lsm_data(substream);
 	cpe = cpe_get_private_data(substream);
+	if (!cpe)
+		return -EINVAL;
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	if (p_info->param_size > MSM_CPE_MAX_CUSTOM_PARAM_SIZE) {
 		dev_err(rtd->dev,
@@ -2092,6 +2140,8 @@ static int msm_cpe_lsm_ioctl(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	switch (cmd) {
 	case SNDRV_LSM_REG_SND_MODEL_V2: {
@@ -2364,6 +2414,8 @@ static int msm_cpe_lsm_ioctl_compat(struct snd_pcm_substream *substream,
 
 	session = lsm_d->lsm_session;
 	lsm_ops = &cpe->lsm_ops;
+	if (!lsm_ops)
+		return -EINVAL;
 
 	switch (cmd) {
 	case SNDRV_LSM_REG_SND_MODEL_V2_32: {

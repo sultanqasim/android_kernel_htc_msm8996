@@ -199,6 +199,8 @@ static void allocate_buf_for_compression(void)
 	size_t size;
 	size_t cmpr;
 
+	return;
+
 	switch (psinfo->bufsize) {
 	/* buffer range for efivars */
 	case 1000 ... 2000:

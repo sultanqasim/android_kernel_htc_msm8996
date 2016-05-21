@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,8 +54,7 @@
 #define C1_B_Cb		1	/* B/Cb */
 #define C0_G_Y		0	/* G/luma */
 
-/* wait for at most 2 vsync for lowest refresh rate (24hz) */
-#define KOFF_TIMEOUT msecs_to_jiffies(84)
+#define KOFF_TIMEOUT msecs_to_jiffies(1000)
 
 #define OVERFETCH_DISABLE_TOP		BIT(0)
 #define OVERFETCH_DISABLE_BOTTOM	BIT(1)
@@ -265,8 +264,6 @@ struct mdss_mdp_ctl_intfs_ops {
 	 */
 	int (*reconfigure)(struct mdss_mdp_ctl *ctl,
 			enum dynamic_switch_modes mode, bool pre);
-	/* called before do any register programming  from commit thread */
-	void (*pre_programming)(struct mdss_mdp_ctl *ctl);
 };
 
 struct mdss_mdp_ctl {
@@ -356,6 +353,9 @@ struct mdss_mdp_ctl {
 	 */
 	struct mdss_rect roi;
 	struct mdss_rect roi_bkup;
+
+	bool cmd_autorefresh_en;
+	int autorefresh_frame_cnt;
 
 	struct blocking_notifier_head notifier_head;
 
@@ -520,11 +520,6 @@ struct mdss_ad_info {
 	struct mdss_mdp_vsync_handler handle;
 	u32 last_str;
 	u32 last_bl;
-	u32 last_ad_data;
-	u16 last_calib[4];
-	bool last_ad_data_valid;
-	bool last_calib_valid;
-	u32 ipc_frame_count;
 	u32 bl_data;
 	u32 calc_itr;
 	uint32_t bl_lin[AD_BL_LIN_LEN];
@@ -699,6 +694,9 @@ struct mdss_overlay_private {
 	u32 bl_events;
 	u32 ad_events;
 	u32 ad_bl_events;
+
+	void *splash_mem_vaddr;
+	dma_addr_t splash_mem_dma;
 };
 
 struct mdss_mdp_set_ot_params {
@@ -1195,8 +1193,6 @@ struct mdss_data_type *mdss_mdp_get_mdata(void);
 int mdss_mdp_secure_display_ctrl(unsigned int enable);
 
 int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd);
-int mdss_mdp_dfps_update_params(struct msm_fb_data_type *mfd,
-	struct mdss_panel_data *pdata, int dfps);
 int mdss_mdp_layer_atomic_validate(struct msm_fb_data_type *mfd,
 	struct file *file, struct mdp_layer_commit_v1 *ov_commit);
 int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
@@ -1484,10 +1480,10 @@ void mdss_mdp_ctl_restore(bool locked);
 int  mdss_mdp_ctl_reset(struct mdss_mdp_ctl *ctl, bool is_recovery);
 int mdss_mdp_wait_for_xin_halt(u32 xin_id, bool is_vbif_nrt);
 void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params);
-int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *ctl, int frame_cnt);
-int mdss_mdp_cmd_get_autorefresh_mode(struct mdss_mdp_ctl *ctl);
-int mdss_mdp_ctl_cmd_set_autorefresh(struct mdss_mdp_ctl *ctl, int frame_cnt);
-int mdss_mdp_ctl_cmd_get_autorefresh(struct mdss_mdp_ctl *ctl);
+int mdss_mdp_cmd_set_autorefresh_mode(struct mdss_mdp_ctl *ctl,
+		int frame_cnt);
+int mdss_mdp_ctl_cmd_autorefresh_enable(struct mdss_mdp_ctl *ctl,
+		int frame_cnt);
 int mdss_mdp_pp_get_version(struct mdp_pp_feature_version *version);
 
 struct mdss_mdp_ctl *mdss_mdp_ctl_alloc(struct mdss_data_type *mdata,

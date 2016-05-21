@@ -17,8 +17,7 @@
 
 #include "platform.h"	/* MC_PM_RUNTIME */
 
-#ifdef MC_PM_RUNTIME
-/* Initialize Power Management */
+#ifdef MC_BL_NOTIFIER
 int mc_pm_start(void);
 /* Free all Power Management resources*/
 void mc_pm_stop(void);

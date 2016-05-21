@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -208,7 +208,7 @@ static int smd_channel_probe(struct platform_device *pdev, uint8_t type)
 		index = PERIPHERAL_SENSORS;
 		break;
 	default:
-		pr_debug("diag: In %s Received probe for invalid index %d",
+		DIAGFWD_DBUG("diag: In %s Received probe for invalid index %d",
 			__func__, pdev->id);
 		return -EINVAL;
 	}
@@ -251,7 +251,7 @@ static int smd_channel_probe(struct platform_device *pdev, uint8_t type)
 
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
-	pr_debug("diag: In %s, SMD port probed %s, id = %d, r = %d\n",
+	DIAGFWD_DBUG("diag: In %s, SMD port probed %s, id = %d, r = %d\n",
 		 __func__, smd_info->name, pdev->id, r);
 
 	return 0;
@@ -732,8 +732,10 @@ static int diag_smd_read(void *ctxt, unsigned char *buf, int buf_len)
 	 * In case if packet size is 0 release the wake source hold earlier
 	 */
 	err = wait_event_interruptible(smd_info->read_wait_q,
-				       (smd_info->hdl != NULL) &&
-				       (atomic_read(&smd_info->opened) == 1));
+				       (smd_info->hdl == NULL) ||
+				       (atomic_read(&smd_info->opened) == 0) ||
+				       (smd_cur_packet_size(smd_info->hdl)) ||
+				       (!atomic_read(&smd_info->diag_state)));
 	if (err) {
 		diagfwd_channel_read_done(smd_info->fwd_ctxt, buf, 0);
 		return -ERESTARTSYS;

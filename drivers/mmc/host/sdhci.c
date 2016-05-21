@@ -47,6 +47,7 @@
 #endif
 
 #define MAX_TUNING_LOOP 40
+#define MAX_CRCERR_COUNT 2
 
 #define ADMA_SIZE	((128 * 2 + 1) * 4)
 
@@ -55,6 +56,10 @@
 
 static unsigned int debug_quirks = 0;
 static unsigned int debug_quirks2;
+
+extern struct scatterlist *cur_sg;
+extern struct scatterlist *prev_sg;
+extern struct scatterlist *mmc_alloc_sg(int sg_len, int *err);
 
 static void sdhci_finish_data(struct sdhci_host *);
 
@@ -167,7 +172,7 @@ static void sdhci_dumpregs(struct sdhci_host *host)
 	sdhci_dump_state(host);
 	pr_info(DRIVER_NAME ": ===========================================\n");
 	if (host->slot_no == 1)
-		BUG_ON(1);
+		pr_err("%s: if have issue, please trigger BUG_ON(1) and report to QCT\n", __func__);
 }
 
 /*****************************************************************************\
@@ -2751,6 +2756,8 @@ static void sdhci_timeout_timer(unsigned long data)
 	spin_lock_irqsave(&host->lock, flags);
 
 	if (host->mrq) {
+		pr_err("%s: CMD%d: Request timeout\n",
+			mmc_hostname(host->mmc), host->mrq->cmd->opcode);
 		pr_err("%s: Timeout waiting for hardware "
 			"interrupt.\n", mmc_hostname(host->mmc));
 		if (host->data)
@@ -2794,11 +2801,36 @@ static void sdhci_tuning_timer(unsigned long data)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
-/*****************************************************************************\
- *                                                                           *
- * Interrupt handling                                                        *
- *                                                                           *
-\*****************************************************************************/
+static void sdhci_underclocking(struct sdhci_host *host)
+{
+	if (host->mmc->crc_count++ < MAX_CRCERR_COUNT) {
+		pr_err("%s: %s: error count : %d\n", mmc_hostname(host->mmc),
+			__func__, host->mmc->crc_count);
+		return;
+	}
+	switch (host->mmc->ios.timing) {
+	case MMC_TIMING_UHS_SDR12:
+		host->mmc->caps &= ~MMC_CAP_UHS_SDR12;
+	case MMC_TIMING_UHS_SDR25:
+		host->mmc->caps &= ~MMC_CAP_UHS_SDR25;
+	case MMC_TIMING_UHS_SDR50:
+		host->mmc->caps &= ~MMC_CAP_UHS_SDR50;
+	case MMC_TIMING_UHS_DDR50:
+		host->mmc->caps &= ~MMC_CAP_UHS_DDR50;
+	case MMC_TIMING_UHS_SDR104:
+		host->mmc->caps &= ~MMC_CAP_UHS_SDR104;
+		break;
+	default:
+		pr_err("%s: %s: unknow timing : %d\n", mmc_hostname(host->mmc),
+			__func__, host->mmc->ios.timing);
+		break;
+	}
+	host->mmc->crc_count = 0;
+	pr_err("%s: %s: disable clock : %d\n", mmc_hostname(host->mmc),
+		__func__, host->mmc->ios.timing);
+}
+
+
 
 static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask, u32 *mask)
 {
@@ -2817,11 +2849,29 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask, u32 *mask)
 	trace_mmc_cmd_rw_end(host->cmd->opcode, intmask,
 				sdhci_readl(host, SDHCI_RESPONSE));
 
-	if (intmask & SDHCI_INT_TIMEOUT)
+	if (intmask & SDHCI_INT_TIMEOUT) {
+		if (mmc_is_sd_host(host->mmc)) {
+			if (host->cmd->opcode != MMC_SLEEP_AWAKE &&
+				host->cmd->opcode != MMC_SEND_EXT_CSD &&
+				host->cmd->opcode != 52 &&
+				host->cmd->opcode != MMC_SEND_OP_COND) {
+				pr_err("%s: CMD%d: Command timeout\n",
+					mmc_hostname(host->mmc), host->cmd->opcode);
+			}
+		}
 		host->cmd->error = -ETIMEDOUT;
-	else if (intmask & (SDHCI_INT_CRC | SDHCI_INT_END_BIT |
-			SDHCI_INT_INDEX))
+	 } else if (intmask & (SDHCI_INT_CRC | SDHCI_INT_END_BIT |
+			SDHCI_INT_INDEX)) {
 		host->cmd->error = -EILSEQ;
+		if ((host->cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200) &&
+			(host->cmd->opcode != MMC_SEND_STATUS) &&
+			(host->cmd->opcode != MMC_SEND_TUNING_BLOCK)) {
+			pr_err("%s: CMD%d: Command CRC error\n",
+				mmc_hostname(host->mmc), host->cmd->opcode);
+			if (mmc_is_sd_host(host->mmc))
+				sdhci_underclocking(host);
+		}
+	}
 
 	if (intmask & SDHCI_INT_AUTO_CMD_ERR) {
 		auto_cmd_status = host->auto_cmd_err_sts;
@@ -2974,14 +3024,27 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		return;
 	}
 
-	if (intmask & SDHCI_INT_DATA_TIMEOUT)
+	if (intmask & SDHCI_INT_DATA_TIMEOUT) {
 		host->data->error = -ETIMEDOUT;
-	else if (intmask & SDHCI_INT_DATA_END_BIT)
+		command = SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND));
+		pr_err("%s: CMD%d: Data timeout\n",
+			mmc_hostname(host->mmc), command);
+	} else if (intmask & SDHCI_INT_DATA_END_BIT) {
 		host->data->error = -EILSEQ;
-	else if ((intmask & SDHCI_INT_DATA_CRC) &&
-		(command != MMC_BUS_TEST_R))
+	} else if ((intmask & SDHCI_INT_DATA_CRC) &&
+			(command != MMC_BUS_TEST_R)) {
+		command = SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND));
 		host->data->error = -EILSEQ;
-	else if (intmask & SDHCI_INT_ADMA_ERROR) {
+		if((command != MMC_SEND_TUNING_BLOCK_HS200) &&
+			(command != MMC_SEND_TUNING_BLOCK)) {
+			pr_err("%s: Data CRC error\n",
+				mmc_hostname(host->mmc));
+			pr_err("%s: opcode 0x%.8x\n", __func__,
+				command);
+			if (mmc_is_sd_host(host->mmc))
+				sdhci_underclocking(host);
+		}
+	} else if (intmask & SDHCI_INT_ADMA_ERROR) {
 		pr_err("%s: ADMA error\n", mmc_hostname(host->mmc));
 		sdhci_show_adma_error(host);
 		host->data->error = -EIO;
@@ -4031,7 +4094,10 @@ int sdhci_add_host(struct sdhci_host *host)
 	if (caps[1] & SDHCI_USE_SDR50_TUNING)
 		host->flags |= SDHCI_SDR50_NEEDS_TUNING;
 
-	/* Does the host need tuning for SDR104 / HS200? */
+	
+	mmc->caps_uhs = mmc->caps;
+
+	
 	if (mmc->caps2 & MMC_CAP2_HS200)
 		host->flags |= SDHCI_SDR104_NEEDS_TUNING;
 
@@ -4146,11 +4212,15 @@ int sdhci_add_host(struct sdhci_host *host)
 	else/* PIO */
 		mmc->max_segs = 128;
 
-	/*
-	 * Maximum number of sectors in one transfer. Limited by DMA boundary
-	 * size (512KiB), unless specified by platform specific driver. Each
-	 * descriptor can transfer a maximum of 64KB.
-	 */
+	if (mmc_is_sd_host(mmc)) {
+		cur_sg = mmc_alloc_sg(mmc->max_segs, &ret);
+		if (ret)
+			printk("%s %s alloc cur_sg err : %d\n", mmc_hostname(mmc), __func__, ret);
+		prev_sg = mmc_alloc_sg(mmc->max_segs, &ret);
+		if (ret)
+			printk("%s %s alloc prev_sg err : %d\n", mmc_hostname(mmc), __func__, ret);
+	}
+
 	if (host->flags & SDHCI_USE_ADMA)
 		mmc->max_req_size = (host->adma_max_desc * 65536);
 	else

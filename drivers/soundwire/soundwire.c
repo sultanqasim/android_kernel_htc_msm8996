@@ -618,10 +618,13 @@ EXPORT_SYMBOL(swr_reset_device);
  */
 int swr_set_device_group(struct swr_device *swr_dev, u8 id)
 {
-	struct swr_master *master = swr_dev->master;
+	struct swr_master *master; 
 
 	if (!swr_dev)
 		return -EINVAL;
+
+	master = swr_dev->master;
+
 	swr_dev->group_id = id;
 	if (!id && master)
 		master->gr_sid = 0;

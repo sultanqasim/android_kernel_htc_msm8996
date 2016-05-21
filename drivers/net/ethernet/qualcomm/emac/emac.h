@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -18,7 +18,6 @@
 #include <linux/netdevice.h>
 #include <linux/clk.h>
 #include <linux/platform_device.h>
-#include <linux/wakelock.h>
 #include "emac_phy.h"
 
 /* Device IDs */
@@ -48,8 +47,6 @@ enum emac_vreg_id {
 	EMAC_VREG1,
 	EMAC_VREG2,
 	EMAC_VREG3,
-	EMAC_VREG4,
-	EMAC_VREG5,
 	EMAC_VREG_CNT
 };
 
@@ -727,7 +724,6 @@ struct emac_adapter {
 	struct pinctrl_state	*pins_sleep;
 	int	(*gpio_on)(struct emac_adapter *adpt);
 	int	(*gpio_off)(struct emac_adapter *adpt);
-	struct wakeup_source link_wlock;
 };
 
 static inline struct emac_adapter *emac_hw_get_adap(struct emac_hw *hw)

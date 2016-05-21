@@ -30,6 +30,7 @@
 #include "ext4_jbd2.h"
 #include "xattr.h"
 #include "acl.h"
+#include <trace/events/mmcio.h>
 
 /*
  * Called when an inode is released. Note that this is different
@@ -119,10 +120,8 @@ ext4_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	if (file->f_flags & O_APPEND)
 		iocb->ki_pos = pos = i_size_read(inode);
 
-	/*
-	 * If we have encountered a bitmap-format file, the size limit
-	 * is smaller than s_maxbytes, which is for extent-mapped files.
-	 */
+	trace_ext4_file_write(iocb->ki_filp->f_path.dentry, iocb->ki_nbytes);
+
 	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))) {
 		struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 

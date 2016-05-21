@@ -153,8 +153,7 @@ struct input_keymap_entry {
 
 #define EVIOCGRAB		_IOW('E', 0x90, int)			/* Grab/Release device */
 
-/* HACK: disable conflicting EVIOCREVOKE until Android userspace stops using EVIOCSSUSPENDBLOCK */
-/*#define EVIOCREVOKE		_IOW('E', 0x91, int)*/			/* Revoke device access */
+			
 
 #define EVIOCGSUSPENDBLOCK	_IOR('E', 0x91, int)			/* get suspend block enable */
 #define EVIOCSSUSPENDBLOCK	_IOW('E', 0x91, int)			/* set suspend block enable */
@@ -479,7 +478,10 @@ struct input_keymap_entry {
 #define KEY_WIMAX		KEY_WWAN
 #define KEY_RFKILL		247	/* Key that controls all radios */
 
-#define KEY_MICMUTE		248	/* Mute / unmute the microphone */
+#define KEY_MICMUTE		248	
+#define KEY_APP_SWITCH		249	
+#define HALL_N_POLE             251     
+#define HALL_S_POLE             252     
 
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
@@ -849,22 +851,24 @@ struct input_keymap_entry {
 
 #define ABS_MISC		0x28
 
-#define ABS_MT_SLOT		0x2f	/* MT slot being modified */
-#define ABS_MT_TOUCH_MAJOR	0x30	/* Major axis of touching ellipse */
-#define ABS_MT_TOUCH_MINOR	0x31	/* Minor axis (omit if circular) */
-#define ABS_MT_WIDTH_MAJOR	0x32	/* Major axis of approaching ellipse */
-#define ABS_MT_WIDTH_MINOR	0x33	/* Minor axis (omit if circular) */
-#define ABS_MT_ORIENTATION	0x34	/* Ellipse orientation */
-#define ABS_MT_POSITION_X	0x35	/* Center X touch position */
-#define ABS_MT_POSITION_Y	0x36	/* Center Y touch position */
-#define ABS_MT_TOOL_TYPE	0x37	/* Type of touching device */
-#define ABS_MT_BLOB_ID		0x38	/* Group a set of packets as a blob */
-#define ABS_MT_TRACKING_ID	0x39	/* Unique ID of initiated contact */
-#define ABS_MT_PRESSURE		0x3a	/* Pressure on contact area */
-#define ABS_MT_DISTANCE		0x3b	/* Contact hover distance */
-#define ABS_MT_TOOL_X		0x3c	/* Center X tool position */
-#define ABS_MT_TOOL_Y		0x3d	/* Center Y tool position */
-
+#define ABS_MT_POSITION     0x2a    
+#define ABS_MT_AMPLITUDE    0x2b    
+#define ABS_MT_SLOT		0x2f	
+#define ABS_MT_TOUCH_MAJOR	0x30	
+#define ABS_MT_TOUCH_MINOR	0x31	
+#define ABS_MT_WIDTH_MAJOR	0x32	
+#define ABS_MT_WIDTH_MINOR	0x33	
+#define ABS_MT_ORIENTATION	0x34	
+#define ABS_MT_POSITION_X	0x35	
+#define ABS_MT_POSITION_Y	0x36	
+#define ABS_MT_TOOL_TYPE	0x37	
+#define ABS_MT_BLOB_ID		0x38	
+#define ABS_MT_TRACKING_ID	0x39	
+#define ABS_MT_PRESSURE		0x3a	
+#define ABS_MT_DISTANCE		0x3b	
+#define ABS_MT_TOOL_X		0x3c	
+#define ABS_MT_TOOL_Y		0x3d	
+#define ABS_MT_GLOVE		0x3e
 
 #define ABS_MAX			0x3f
 #define ABS_CNT			(ABS_MAX+1)

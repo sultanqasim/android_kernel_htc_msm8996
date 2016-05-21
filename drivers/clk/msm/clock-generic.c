@@ -20,7 +20,10 @@
 #include <linux/clk/msm-clock-generic.h>
 #include <soc/qcom/msm-clock-controller.h>
 
-/* ==================== Mux clock ==================== */
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+#include <htc_mnemosyne/htc_footprint.h>
+#endif
+
 
 static int mux_parent_to_src_sel(struct mux_clk *mux, struct clk *p)
 {
@@ -99,10 +102,9 @@ static int mux_set_rate(struct clk *c, unsigned long rate)
 	unsigned long new_par_curr_rate;
 	unsigned long flags;
 
-	/*
-	 * Check if one of the possible parents is already at the requested
-	 * rate.
-	 */
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_SAFE_PARENT_INIT);
+#endif
 	for (i = 0; i < mux->num_parents && mux->try_get_rate; i++) {
 		struct clk *p = mux->parents[i].src;
 		if (p->rate == rate && clk_round_rate(p, rate) == rate) {
@@ -124,13 +126,9 @@ static int mux_set_rate(struct clk *c, unsigned long rate)
 	if (new_parent == NULL)
 		return -EINVAL;
 
-	/*
-	 * Switch to safe parent since the old and new parent might be the
-	 * same and the parent might temporarily turn off while switching
-	 * rates. If the mux can switch between distinct sources safely
-	 * (indicated by try_new_parent), and the new source is not the current
-	 * parent, do not switch to the safe parent.
-	 */
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_SET_SAFE_RATE);
+#endif
 	if (mux->safe_sel >= 0 &&
 		!(mux->try_new_parent && (new_parent != c->parent))) {
 		/*
@@ -159,23 +157,46 @@ static int mux_set_rate(struct clk *c, unsigned long rate)
 
 	}
 
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_SET_PARENT_RATE);
+#endif
 	new_par_curr_rate = clk_get_rate(new_parent);
 	rc = clk_set_rate(new_parent, rate);
 	if (rc)
 		goto set_rate_fail;
 
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_CLK_PREPARE);
+#endif
 	rc = mux_set_parent(c, new_parent);
 	if (rc)
 		goto set_par_fail;
 
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_cpu_freq_footprint_by_clk(FT_CUR_RATE, c, rate);
+	set_acpuclk_l2_freq_footprint_by_clk(FT_CUR_RATE, c, rate);
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_RETURN);
+#endif
+
 	return 0;
 
 set_par_fail:
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_ERR_CLK_UNPREPARE);
+#endif
+
 	clk_set_rate(new_parent, new_par_curr_rate);
 set_rate_fail:
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_ERR_SET_PARENT_RATE);
+#endif
+
 	WARN(mux->ops->set_mux_sel(mux,
 		mux_parent_to_src_sel(mux, c->parent)),
 		"Set rate failed for %s. Also in bad state!\n", c->dbg_name);
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+	set_acpuclk_footprint_by_clk(c, ACPU_BEFORE_ERR_RETURN);
+#endif
 	return rc;
 }
 

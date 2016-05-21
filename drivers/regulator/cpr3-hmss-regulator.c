@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -324,14 +324,6 @@ msm8996_hmss_aging_init_quot_diff_param[] = {
 	{},
 };
 
-#define MSM8996PRO_SOC_ID			4
-
-/*
- * Some initial msm8996 parts cannot be used in a meaningful way by software.
- * Other parts can only be used when operating with CPR disabled (i.e. at the
- * fused open-loop voltage) when no voltage interpolation is applied.  A fuse
- * parameter is provided so that software can properly handle these limitations.
- */
 enum msm8996_cpr_limitation {
 	MSM8996_CPR_LIMITATION_NONE = 0,
 	MSM8996_CPR_LIMITATION_UNSUPPORTED = 2,
@@ -635,8 +627,7 @@ static int cpr3_msm8996_hmss_calculate_open_loop_voltages(
 	soc_revision = vreg->thread->ctrl->soc_revision;
 	if (soc_revision == 1 || soc_revision == 2)
 		ref_volt = msm8996_v1_v2_hmss_fuse_ref_volt;
-	else if (soc_revision == 3 && fuse->speed_bin == 1
-				   && fuse->cpr_fusing_rev >= 5)
+	else if (fuse->speed_bin == 1 && fuse->cpr_fusing_rev >= 5)
 		ref_volt = msm8996_v3_speed_bin1_rev5_hmss_fuse_ref_volt;
 	else
 		ref_volt = msm8996_v3_hmss_fuse_ref_volt;
@@ -1586,26 +1577,47 @@ static int cpr3_hmss_regulator_resume(struct platform_device *pdev)
 static struct of_device_id cpr_regulator_match_table[] = {
 	{
 		.compatible = "qcom,cpr3-msm8996-v1-hmss-regulator",
-		.data = (void *)(uintptr_t)1
+		.data = (void *)1
 	},
 	{
 		.compatible = "qcom,cpr3-msm8996-v2-hmss-regulator",
-		.data = (void *)(uintptr_t)2
+		.data = (void *)2
 	},
 	{
 		.compatible = "qcom,cpr3-msm8996-v3-hmss-regulator",
-		.data = (void *)(uintptr_t)3
+		.data = (void *)3
 	},
 	{
 		.compatible = "qcom,cpr3-msm8996-hmss-regulator",
-		.data = (void *)(uintptr_t)3
-	},
-	{
-		.compatible = "qcom,cpr3-msm8996pro-hmss-regulator",
-		.data = (void *)(uintptr_t)MSM8996PRO_SOC_ID,
+		.data = (void *)3
 	},
 	{}
 };
+
+u64* htc_target_quot[2] = {NULL};
+int htc_target_quot_len = 0;
+static void bak_htc_target_quot(struct cpr3_controller *ctrl)
+{
+	struct cpr3_msm8996_hmss_fuses *fuse;
+	struct cpr3_thread *thread;
+	struct cpr3_regulator *vreg;
+	int i, size;
+
+	
+	size = sizeof(htc_target_quot)/sizeof(u64);
+	if (size != ctrl->thread_count) {
+		WARN_ON(1);
+		return;
+	}
+
+	htc_target_quot_len = MSM8996_HMSS_FUSE_CORNERS;
+	for (i = 0; i < ctrl->thread_count; i++) {
+		thread = &ctrl->thread[i];
+		vreg = thread->vreg;
+		fuse = vreg->platform_fuses;
+		htc_target_quot[i] = fuse->target_quot;
+	}
+}
 
 static int cpr3_hmss_regulator_probe(struct platform_device *pdev)
 {
@@ -1697,6 +1709,7 @@ static int cpr3_hmss_regulator_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, ctrl);
+	bak_htc_target_quot(ctrl);
 
 	return cpr3_regulator_register(pdev, ctrl);
 }
