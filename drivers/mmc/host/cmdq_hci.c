@@ -37,7 +37,7 @@
 /* 1 sec */
 #define HALT_TIMEOUT_MS 1000
 
-static int cmdq_halt_poll(struct mmc_host *mmc);
+static int cmdq_halt_poll(struct mmc_host *mmc, bool halt);
 static int cmdq_halt(struct mmc_host *mmc, bool halt);
 
 #ifdef CONFIG_PM_RUNTIME
@@ -407,6 +407,8 @@ static int cmdq_enable(struct mmc_host *mmc)
 	mb();
 
 	cq_host->enabled = true;
+	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
+		__func__, cq_host->enabled);
 	mmc_host_clr_cq_disable(mmc);
 
 	if (cq_host->ops->set_block_size)
@@ -427,11 +429,10 @@ out:
 	return err;
 }
 
-static void cmdq_disable(struct mmc_host *mmc, bool soft)
+static void cmdq_disable_nosync(struct mmc_host *mmc, bool soft)
 {
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
 
-	cmdq_runtime_pm_get(cq_host);
 	if (soft) {
 		cmdq_writel(cq_host, cmdq_readl(
 				    cq_host, CQCFG) & ~(CQ_ENABLE),
@@ -440,9 +441,19 @@ static void cmdq_disable(struct mmc_host *mmc, bool soft)
 	if (cq_host->ops->enhanced_strobe_mask)
 		cq_host->ops->enhanced_strobe_mask(mmc, false);
 
-	cmdq_runtime_pm_put(cq_host);
 	cq_host->enabled = false;
+	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
+		__func__, cq_host->enabled);
 	mmc_host_set_cq_disable(mmc);
+}
+
+static void cmdq_disable(struct mmc_host *mmc, bool soft)
+{
+	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
+
+	cmdq_runtime_pm_get(cq_host);
+	cmdq_disable_nosync(mmc, soft);
+	cmdq_runtime_pm_put(cq_host);
 }
 
 static void cmdq_reset(struct mmc_host *mmc, bool soft)
@@ -488,6 +499,8 @@ static void cmdq_reset(struct mmc_host *mmc, bool soft)
 	cmdq_writel(cq_host, cqcfg, CQCFG);
 	cmdq_runtime_pm_put(cq_host);
 	cq_host->enabled = true;
+	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
+		__func__, cq_host->enabled);
 	mmc_host_clr_cq_disable(mmc);
 }
 
@@ -686,6 +699,7 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		pr_err("%s: CMDQ host not enabled yet !!!\n",
 		       mmc_hostname(mmc));
 		err = -EINVAL;
+		BUG_ON(1);
 		goto out;
 	}
 
@@ -784,14 +798,7 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, int err)
 		pr_err("%s: err: %d status: 0x%08x task-err-info (0x%08lx)\n",
 		       mmc_hostname(mmc), err, status, err_info);
 
-		/*
-		 * Need to halt CQE in case of error in interrupt context itself
-		 * otherwise CQE may proceed with sending CMD to device even if
-		 * CQE/card is in error state.
-		 * CMDQ error handling will make sure that it is unhalted after
-		 * handling all the errors.
-		 */
-		ret = cmdq_halt_poll(mmc);
+		ret = cmdq_halt_poll(mmc, true);
 		if (ret)
 			pr_err("%s: %s: halt failed ret=%d\n",
 					mmc_hostname(mmc), __func__, ret);
@@ -812,7 +819,7 @@ irqreturn_t cmdq_irq(struct mmc_host *mmc, int err)
 			if (!dbr_set) {
 				pr_err("%s: spurious/force error interrupt\n",
 						mmc_hostname(mmc));
-				cmdq_halt(mmc, false);
+				cmdq_halt_poll(mmc, false);
 				mmc_host_clr_halt(mmc);
 				return IRQ_HANDLED;
 			}
@@ -857,7 +864,7 @@ skip_cqterri:
 		 * from processing any further requests
 		 */
 		if (ret)
-			cmdq_disable(mmc, true);
+			cmdq_disable_nosync(mmc, true);
 
 		/*
 		 * CQE detected a reponse error from device
@@ -921,15 +928,20 @@ out:
 }
 EXPORT_SYMBOL(cmdq_irq);
 
-/* cmdq_halt_poll - Halting CQE using polling method.
- * @mmc: struct mmc_host
- * This is used mainly from interrupt context to halt
- * CQE engine.
- */
-static int cmdq_halt_poll(struct mmc_host *mmc)
+static int cmdq_halt_poll(struct mmc_host *mmc, bool halt)
 {
 	struct cmdq_host *cq_host = (struct cmdq_host *)mmc_cmdq_private(mmc);
 	int retries = 100;
+
+	if (!halt) {
+		if (cq_host->ops->set_data_timeout)
+			cq_host->ops->set_data_timeout(mmc, 0xf);
+		if (cq_host->ops->clear_set_irqs)
+			cq_host->ops->clear_set_irqs(mmc, true);
+		cmdq_writel(cq_host, cmdq_readl(cq_host, CQCTL) & ~HALT,
+			    CQCTL);
+		return 0;
+	}
 
 	cmdq_set_halt_irq(cq_host, false);
 	cmdq_writel(cq_host, cmdq_readl(cq_host, CQCTL) | HALT, CQCTL);

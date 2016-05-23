@@ -1442,7 +1442,7 @@ static int task_numa_migrate(struct task_struct *p)
 		.p = p,
 
 		.src_cpu = task_cpu(p),
-		.src_nid = task_node(p),
+		.src_nid = cpu_to_node(task_cpu(p)),
 
 		.imbalance_pct = 112,
 
@@ -2022,9 +2022,6 @@ void task_numa_fault(int last_cpupid, int mem_node, int pages, int flags)
 	if (time_after(jiffies, p->numa_migrate_retry))
 		numa_migrate_preferred(p);
 
-	if (migrated)
-		p->numa_pages_migrated += pages;
-
 	p->numa_faults_buffer_memory[task_faults_idx(mem_node, priv)] += pages;
 	p->numa_faults_buffer_cpu[task_faults_idx(cpu_node, priv)] += pages;
 	p->numa_faults_locality[local] += pages;
@@ -2242,7 +2239,7 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 }
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-# ifdef CONFIG_SMP
+#ifdef CONFIG_SMP
 static inline long calc_tg_weight(struct task_group *tg, struct cfs_rq *cfs_rq)
 {
 	long tg_weight;
@@ -2277,12 +2274,12 @@ static long calc_cfs_shares(struct cfs_rq *cfs_rq, struct task_group *tg)
 
 	return shares;
 }
-# else /* CONFIG_SMP */
+#else 
 static inline long calc_cfs_shares(struct cfs_rq *cfs_rq, struct task_group *tg)
 {
 	return tg->shares;
 }
-# endif /* CONFIG_SMP */
+#endif 
 static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 			    unsigned long weight)
 {
@@ -2610,6 +2607,23 @@ int sched_set_init_task_load(struct task_struct *p, int init_load_pct)
 	return 0;
 }
 
+int sched_set_cpu_budget(int cpu, int budget)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	rq->budget = budget;
+
+	return 0;
+}
+
+int sched_get_cpu_budget(int cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	return rq->budget;
+}
+
+
 #ifdef CONFIG_CGROUP_SCHED
 
 static inline int upmigrate_discouraged(struct task_struct *p)
@@ -2687,12 +2701,9 @@ int sched_set_boost(int enable)
 	old_refcount = boost_refcount;
 
 	if (enable == 1) {
-		boost_refcount++;
+		boost_refcount = 1;
 	} else if (!enable) {
-		if (boost_refcount >= 1)
-			boost_refcount--;
-		else
-			ret = -EINVAL;
+		boost_refcount = 0;
 	} else {
 		ret = -EINVAL;
 	}
@@ -2728,24 +2739,35 @@ done:
 	return ret;
 }
 
-/*
- * Task will fit on a cpu if it's bandwidth consumption on that cpu
- * will be less than sched_upmigrate. A big task that was previously
- * "up" migrated will be considered fitting on "little" cpu if its
- * bandwidth consumption on "little" cpu will be less than
- * sched_downmigrate. This will help avoid frequenty migrations for
- * tasks with load close to the upmigrate threshold
- */
+int over_schedule_budget(int cpu)
+{
+	struct rq *rq = cpu_rq(cpu);
+
+	if (rq->budget == 0)
+		return 1;
+
+	if (rq->budget == 100)
+		return 0;
+
+	return (rq->load_avg > rq->budget)? 1 : 0;
+}
+
 
 static int task_load_will_fit(struct task_struct *p, u64 task_load, int cpu)
 {
+	int upmigrate;
+
 	if (cpu_capacity(cpu) == max_capacity)
 		return 1;
 
 	if (task_nice(p) > sched_upmigrate_min_nice || upmigrate_discouraged(p))
 		return 1;
 
-	if (task_load < sched_upmigrate)
+	upmigrate = sched_upmigrate;
+	if (cpu_capacity(task_cpu(p)) > cpu_capacity(cpu))
+		upmigrate = sched_downmigrate;
+
+	if (task_load < upmigrate)
 		return 1;
 
 	return 0;
@@ -2874,15 +2896,17 @@ struct cpu_select_env {
 };
 
 struct cluster_cpu_stats {
-	int best_idle_cpu, best_capacity_cpu, best_cpu, best_sibling_cpu;
+	int best_idle_cpu, best_capacity_cpu, best_cpu, best_sibling_cpu, best_fallback_cpu;
 	int min_cost, best_sibling_cpu_cost;
 	u64 min_load, best_sibling_cpu_load;
 	s64 highest_spare_capacity;
+	u64 min_load_f;
 };
 
 #define UP_MIGRATION		1
 #define DOWN_MIGRATION		2
 #define IRQLOAD_MIGRATION	3
+#define BUDGET_MIGRATION	4
 
 /*
  * Invoked from three places:
@@ -2940,6 +2964,9 @@ static int skip_cpu(int cpu, struct cpu_select_env *env)
 	switch (env->reason) {
 	case UP_MIGRATION:
 		skip = !idle_cpu(cpu);
+		break;
+	case BUDGET_MIGRATION:
+		skip = 0;
 		break;
 	case IRQLOAD_MIGRATION:
 		/* Purposely fall through */
@@ -3056,6 +3083,9 @@ struct cpu_select_env *env, struct cluster_cpu_stats *stats)
 			sched_irqload(i), power_cost(i, task_load(env->p) +
 					cpu_cravg_sync(i, env->sync)), 0);
 
+			if (cpu_rq(i)->budget == 0)
+				continue;
+
 			update_spare_capacity(stats, i, next->capacity,
 					  cpu_load_sync(i, env->sync));
 		}
@@ -3151,8 +3181,20 @@ static void find_best_cpu_in_cluster(struct sched_cluster *c,
 			power_cost(i, task_load(env->p) +
 					cpu_cravg_sync(i, env->sync)), 0);
 
+		if (cpu_rq(i)->budget == 0)
+			continue;
+
+		if (!env->boost && over_schedule_budget(i))
+			continue;
+
 		if (unlikely(!cpu_active(i)) || skip_cpu(i, env))
 			continue;
+
+		if ((stats->min_load_f > env->cpu_load) ||
+		    (stats->min_load_f == env->cpu_load && i == env->prev_cpu)) {
+			stats->min_load_f = env->cpu_load;
+			stats->best_fallback_cpu = i;
+		}
 
 		update_spare_capacity(stats, i, c->capacity, env->cpu_load);
 
@@ -3170,7 +3212,9 @@ static inline void init_cluster_cpu_stats(struct cluster_cpu_stats *stats)
 	stats->best_capacity_cpu = stats->best_sibling_cpu  = -1;
 	stats->min_cost = stats->best_sibling_cpu_cost = INT_MAX;
 	stats->min_load	= stats->best_sibling_cpu_load = ULLONG_MAX;
+	stats->min_load_f = ULLONG_MAX;
 	stats->highest_spare_capacity = 0;
+	stats->best_fallback_cpu = -1;
 }
 
 /*
@@ -3204,12 +3248,13 @@ bias_to_prev_cpu(struct cpu_select_env *env, struct cluster_cpu_stats *stats)
 					unlikely(!cpu_active(prev_cpu)))
 		return false;
 
-	/*
-	 * This function should be used by task wake up path only as it's
-	 * assuming p->last_switch_out_ts as last sleep time.
-	 * p->last_switch_out_ts can denote last preemption time as well as
-	 * last sleep time.
-	 */
+
+	if (over_schedule_budget(prev_cpu)) {
+		env->ignore_prev_cpu = 1;
+		return false;
+	}
+
+
 	if (task->ravg.mark_start - task->last_switch_out_ts >=
 					sched_short_sleep_task_threshold)
 		return false;
@@ -3326,9 +3371,13 @@ retry:
 	}
 
 out:
+	if (!env.boost && over_schedule_budget(target) && stats.best_fallback_cpu >= 0)
+		target = stats.best_fallback_cpu;
+
 	rcu_read_unlock();
 	trace_sched_task_load(p, sched_boost(), env.reason, env.sync,
 					env.need_idle, fast_path, target);
+
 	return target;
 }
 
@@ -3816,6 +3865,9 @@ static inline int migration_needed(struct task_struct *p, int cpu)
 	/* No need to migrate task that is about to be throttled */
 	if (task_will_be_throttled(p))
 		return 0;
+
+	if (over_schedule_budget(cpu))
+		return BUDGET_MIGRATION;
 
 	if (sched_cpu_high_irqload(cpu))
 		return IRQLOAD_MIGRATION;
@@ -7236,13 +7288,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 	lockdep_assert_held(&env->src_rq->lock);
 
-	/*
-	 * We do not migrate tasks that are:
-	 * 1) throttled_lb_pair, or
-	 * 2) cannot be migrated to this CPU due to cpus_allowed, or
-	 * 3) running (obviously), or
-	 * 4) are cache-hot on their current CPU.
-	 */
+	if (over_schedule_budget(env->dst_cpu))
+		return 0;
+
 	if (throttled_lb_pair(task_group(p), env->src_cpu, env->dst_cpu))
 		return 0;
 
@@ -8867,6 +8915,7 @@ redo:
 	schedstat_add(sd, lb_imbalance[idle], env.imbalance);
 
 	ld_moved = 0;
+
 	if (busiest->nr_running > 1) {
 		/*
 		 * Attempt to move tasks. If find_busiest_group has found
@@ -8988,7 +9037,8 @@ no_move:
 		 * excessive cache_hot migrations and active balances.
 		 */
 		if (idle != CPU_NEWLY_IDLE &&
-		    !(env.flags & LBF_HMP_ACTIVE_BALANCE))
+		    !(env.flags & LBF_HMP_ACTIVE_BALANCE) &&
+		    !over_schedule_budget(env.dst_cpu))
 			sd->nr_balance_failed++;
 
 		if (need_active_balance(&env)) {
@@ -9169,9 +9219,9 @@ static int idle_balance(struct rq *this_rq)
 		goto out;
 	}
 
-	/*
-	 * Drop the rq->lock, but keep IRQ/preempt disabled.
-	 */
+	if (over_schedule_budget(this_cpu))
+		goto out;
+
 	raw_spin_unlock(&this_rq->lock);
 
 	update_blocked_averages(this_cpu);
@@ -9681,7 +9731,8 @@ static void nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle)
 		goto end;
 
 	for_each_cpu(balance_cpu, nohz.idle_cpus_mask) {
-		if (balance_cpu == this_cpu || !idle_cpu(balance_cpu))
+		if (balance_cpu == this_cpu || !idle_cpu(balance_cpu) ||
+				over_schedule_budget(balance_cpu))
 			continue;
 
 		/*
@@ -9872,6 +9923,9 @@ void trigger_load_balance(struct rq *rq)
 
 	/* Don't need to rebalance while attached to NULL domain */
 	if (unlikely(on_null_domain(rq)))
+		return;
+
+	if (over_schedule_budget(cpu_of(rq)))
 		return;
 
 	if (time_after_eq(jiffies, rq->next_balance))

@@ -16,6 +16,7 @@
 #include <linux/page-flags-layout.h>
 #include <asm/page.h>
 #include <asm/mmu.h>
+#include <htc_debug/stability/debug_page_user_trace.h>
 
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
@@ -206,6 +207,9 @@ struct page {
 	struct stack_trace trace;
 	unsigned long trace_entries[8];
 #endif
+
+	DECLARE_PAGE_USER_TRACE(trace_alloc);
+	DECLARE_PAGE_USER_TRACE(trace_free);
 }
 /*
  * The struct page can be forced to be double word aligned so that atomic ops
@@ -469,6 +473,10 @@ struct mm_struct {
 	bool tlb_flush_pending;
 #endif
 	struct uprobes_state uprobes_state;
+#ifdef CONFIG_MSM_APP_SETTINGS
+	int app_setting;
+#endif
+
 };
 
 static inline void mm_init_cpumask(struct mm_struct *mm)

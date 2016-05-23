@@ -27,6 +27,7 @@
 #include <sound/q6afe-v2.h>
 #include <sound/msm-dai-q6-v2.h>
 #include <sound/pcm_params.h>
+#include <sound/htc_acoustic_alsa.h>
 
 #define MSM_DAI_PRI_AUXPCM_DT_DEV_ID 1
 #define MSM_DAI_SEC_AUXPCM_DT_DEV_ID 2
@@ -2394,6 +2395,10 @@ static int msm_auxpcm_dev_probe(struct platform_device *pdev)
 		goto fail_reg_dai;
 	}
 
+	if (!strncmp(intf_name, "primary", sizeof("primary"))) {
+		register_htc_ftm_dev(&pdev->dev);
+	}
+
 	return rc;
 
 fail_reg_dai:
@@ -3515,6 +3520,8 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 	u32 tx_line = 0;
 	u32  rx_line = 0;
 	u32 mi2s_intf = 0;
+	u32 mi2s_slave = 0;
+	u32 mi2s_ext_mclk_rate = 0;
 	struct msm_mi2s_pdata *mi2s_pdata;
 	int rc;
 
@@ -3562,11 +3569,28 @@ static int msm_dai_q6_mi2s_dev_probe(struct platform_device *pdev)
 			"qcom,msm-mi2s-tx-lines");
 		goto free_pdata;
 	}
-	dev_dbg(&pdev->dev, "dev name %s Rx line 0x%x , Tx ine 0x%x\n",
-		dev_name(&pdev->dev), rx_line, tx_line);
+
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,msm-mi2s-slave",
+				  &mi2s_slave);
+	if (rc) {
+		dev_dbg(&pdev->dev, "%s: %s Not found, defaulting to Master\n",
+			__func__, "qcom,msm-mi2s-slave");
+	}
+
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,msm-mi2s-ext-mclk",
+				  &mi2s_ext_mclk_rate);
+	if (rc) {
+		dev_dbg(&pdev->dev, "%s: %s Not found\n",
+			__func__, "qcom,msm-mi2s-ext-mclk");
+	}
+
+	dev_dbg(&pdev->dev, "dev name %s Rx line 0x%x, Tx line 0x%x, slave %d, mi2s_ext_mclk_rate %u\n",
+		dev_name(&pdev->dev), rx_line, tx_line, mi2s_slave, mi2s_ext_mclk_rate);
 	mi2s_pdata->rx_sd_lines = rx_line;
 	mi2s_pdata->tx_sd_lines = tx_line;
 	mi2s_pdata->intf_id = mi2s_intf;
+	mi2s_pdata->slave = mi2s_slave;
+	mi2s_pdata->ext_mclk_rate = mi2s_ext_mclk_rate;
 
 	dai_data = kzalloc(sizeof(struct msm_dai_q6_mi2s_dai_data),
 			   GFP_KERNEL);

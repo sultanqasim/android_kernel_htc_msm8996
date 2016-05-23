@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -309,7 +309,13 @@ int msm_isp_get_clk_info(struct vfe_device *vfe_dev,
 void msm_isp_get_timestamp(struct msm_isp_timestamp *time_stamp)
 {
 	struct timespec ts;
+	
+	#if 0
 	get_monotonic_boottime(&ts);
+	#else
+	ktime_get_ts(&ts);
+	#endif
+	
 	time_stamp->buf_time.tv_sec    = ts.tv_sec;
 	time_stamp->buf_time.tv_usec   = ts.tv_nsec/1000;
 	do_gettimeofday(&(time_stamp->event_time));
@@ -558,6 +564,9 @@ static int msm_isp_set_clk_rate(struct vfe_device *vfe_dev, long *rate)
 	int clk_idx = vfe_dev->hw_info->vfe_clk_idx;
 	long round_rate =
 		clk_round_rate(vfe_dev->vfe_clk[clk_idx], *rate);
+	
+	pr_info("[CAM]%s: round_rate %ld, rate %ld", __func__, round_rate, *rate);
+	
 	if (round_rate < 0) {
 		pr_err("%s: Invalid vfe clock rate\n", __func__);
 		return round_rate;
@@ -1889,7 +1898,7 @@ static void msm_isp_process_overflow_irq(
 	if (overflow_mask) {
 		struct msm_isp_event_data error_event;
 		struct msm_vfe_axi_halt_cmd halt_cmd;
-
+                pr_err("%s: overflow_mask:0x%x\n", __func__, overflow_mask);
 		if (vfe_dev->reset_pending == 1) {
 			pr_err("%s:%d failed: overflow %x during reset\n",
 				__func__, __LINE__, overflow_mask);
@@ -2039,8 +2048,8 @@ void msm_isp_do_tasklet(unsigned long data)
 			irq_status0, irq_status1);
 		if (atomic_read(&vfe_dev->error_info.overflow_state)
 			!= NO_OVERFLOW) {
-			ISP_DBG("%s: Recovery in processing, Ignore IRQs!!!\n",
-				__func__);
+                        pr_err("%s: overflow_state:%d, Recovery in processing, Ignore IRQs!!!\n",
+                                __func__, atomic_read(&vfe_dev->error_info.overflow_state));
 			continue;
 		}
 		msm_isp_process_error_info(vfe_dev);
@@ -2069,11 +2078,10 @@ int msm_isp_set_src_state(struct vfe_device *vfe_dev, void *arg)
 	return 0;
 }
 
-static int msm_vfe_iommu_fault_handler(struct iommu_domain *domain,
+static void msm_vfe_iommu_fault_handler(struct iommu_domain *domain,
 	struct device *dev, unsigned long iova, int flags, void *token)
 {
 	struct vfe_device *vfe_dev = NULL;
-	int rc = 1;
 
 	if (token) {
 		vfe_dev = (struct vfe_device *)token;
@@ -2088,9 +2096,13 @@ static int msm_vfe_iommu_fault_handler(struct iommu_domain *domain,
 
 		mutex_lock(&vfe_dev->core_mutex);
 		if (vfe_dev->vfe_open_cnt > 0) {
-			atomic_set(&vfe_dev->error_info.overflow_state,
-				HALT_ENFORCED);
-			rc = msm_isp_process_iommu_page_fault(vfe_dev);
+                       pr_err("%s: overflow_state :%d\n", __func__,
+                               atomic_read(&vfe_dev->error_info.overflow_state));
+                       if (atomic_read(&vfe_dev->error_info.overflow_state) != OVERFLOW_DETECTED) {
+                               atomic_set(&vfe_dev->error_info.overflow_state,
+                                       HALT_ENFORCED);
+                               msm_isp_process_iommu_page_fault(vfe_dev);
+                       }
 		} else {
 			pr_err("%s: no handling, vfe open cnt = %d\n",
 				__func__, vfe_dev->vfe_open_cnt);
@@ -2102,11 +2114,7 @@ static int msm_vfe_iommu_fault_handler(struct iommu_domain *domain,
 		goto end;
 	}
 end:
-	/*
-	 * On the first fault rerurn ENOSYS so the smmu driver will
-	 * print its debug stuff
-	 */
-	return rc ? 0 : -ENOSYS;
+	return;
 }
 
 int msm_isp_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)

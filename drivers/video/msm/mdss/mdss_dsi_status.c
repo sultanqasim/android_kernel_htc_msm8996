@@ -24,12 +24,15 @@
 #include <linux/kobject.h>
 #include <linux/string.h>
 #include <linux/sysfs.h>
+#include <linux/interrupt.h>
+#include <linux/spinlock.h>
 
 #include "mdss_fb.h"
 #include "mdss_dsi.h"
 #include "mdss_panel.h"
 #include "mdss_mdp.h"
 
+#define VSYNC_CHECK_MARGIN 1000
 #define STATUS_CHECK_INTERVAL_MS 5000
 #define STATUS_CHECK_INTERVAL_MIN_MS 50
 #define DSI_STATUS_CHECK_INIT -1
@@ -38,6 +41,7 @@
 static uint32_t interval = STATUS_CHECK_INTERVAL_MS;
 static int32_t dsi_status_disable = DSI_STATUS_CHECK_INIT;
 struct dsi_status_data *pstatus_data;
+static uint32_t hw_vsync_count = 0;
 
 /*
  * check_dsi_ctrl_status() - Reads MFD structure and
@@ -46,11 +50,11 @@ struct dsi_status_data *pstatus_data;
  */
 static void check_dsi_ctrl_status(struct work_struct *work)
 {
+	unsigned long flag;
 	struct dsi_status_data *pdsi_status = NULL;
 
 	pdsi_status = container_of(to_delayed_work(work),
 		struct dsi_status_data, check_status);
-
 	if (!pdsi_status) {
 		pr_err("%s: DSI status data not available\n", __func__);
 		return;
@@ -67,7 +71,42 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 		return;
 	}
 
-	pdsi_status->mfd->mdp.check_dsi_status(work, interval);
+	spin_lock_irqsave(&pstatus_data->te.spinlock, flag);
+
+	pr_info("now=%d, last=%d, vsync=%d\n",
+		jiffies_to_msecs(jiffies),
+		jiffies_to_msecs(pstatus_data->te.ts_last_check),
+		jiffies_to_msecs(pstatus_data->te.ts_vsync));
+
+	if (pstatus_data->te.ts_vsync && pstatus_data->te.ts_last_check) {
+		if (time_after(pstatus_data->te.ts_last_check,
+			pstatus_data->te.ts_vsync+msecs_to_jiffies(VSYNC_CHECK_MARGIN))) {
+			pr_warn("%s: Vsync doesn't come within schedule\n", __func__);
+			if (hw_vsync_count) {
+				
+				pstatus_data->te.ts_last_check =
+					pstatus_data->te.ts_vsync = jiffies;
+				spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
+				pdsi_status->mfd->mdp.check_dsi_status(work, interval);
+				goto l_end;
+			} else {
+				pr_err("%s: HW vsync missing after unblanking!\n", __func__);
+				panic("LCM DDIC no TE");
+			}
+		} else {
+			pstatus_data->te.ts_last_check = jiffies;
+			enable_irq(pstatus_data->te.irq);
+			pstatus_data->te.irq_enabled = true;
+			spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
+			goto l_end;
+		}
+	}
+
+	pstatus_data->te.ts_last_check = jiffies;
+	spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
+l_end:
+	mod_delayed_work(system_wq, &pstatus_data->check_status,
+		msecs_to_jiffies(interval));
 }
 
 /*
@@ -81,6 +120,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
  */
 irqreturn_t hw_vsync_handler(int irq, void *data)
 {
+	unsigned long flag;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
 			(struct mdss_dsi_ctrl_pdata *)data;
 	if (!ctrl_pdata) {
@@ -88,10 +128,21 @@ irqreturn_t hw_vsync_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
-	if (pstatus_data)
-		mod_delayed_work(system_wq, &pstatus_data->check_status,
-			msecs_to_jiffies(interval));
-	else
+	if (pstatus_data) {
+		spin_lock_irqsave(&pstatus_data->te.spinlock, flag);
+		pstatus_data->te.ts_vsync = jiffies;
+		if (pstatus_data->te.first == true) {
+			pstatus_data->te.first = false;
+			pstatus_data->te.irq = gpio_to_irq(ctrl_pdata->disp_te_gpio);
+		}
+		if (pstatus_data->te.irq_enabled) {
+			pstatus_data->te.irq_enabled = false;
+			disable_irq_nosync(pstatus_data->te.irq);
+		}
+		hw_vsync_count++;
+		pr_info("%s: hw_vsync count = %d\n", __func__, hw_vsync_count);
+		spin_unlock_irqrestore(&pstatus_data->te.spinlock, flag);
+	} else
 		pr_err("Pstatus data is NULL\n");
 
 	if (!atomic_read(&ctrl_pdata->te_irq_ready))
@@ -153,6 +204,7 @@ static int fb_event_callback(struct notifier_block *self,
 
 		switch (*blank) {
 		case FB_BLANK_UNBLANK:
+			hw_vsync_count = 0;
 			schedule_delayed_work(&pdata->check_status,
 				msecs_to_jiffies(interval));
 			break;
@@ -224,6 +276,13 @@ int __init mdss_dsi_status_init(void)
 		kfree(pstatus_data);
 		return -EPERM;
 	}
+
+	pstatus_data->te.irq = -1;
+	pstatus_data->te.irq_enabled = false;
+	pstatus_data->te.first = true;
+	pstatus_data->te.ts_vsync = 0;
+	pstatus_data->te.ts_last_check = 0;
+	spin_lock_init(&pstatus_data->te.spinlock);
 
 	pr_info("%s: DSI status check interval:%d\n", __func__,	interval);
 

@@ -163,7 +163,7 @@ int vote(struct votable *votable, int client_id, bool state, int val)
 	votable->votes[client_id].state = state;
 	votable->votes[client_id].value = val;
 
-	pr_debug("%s: %d voting for %d - %s\n",
+	pr_info("%s: %d voting for %d - %s\n",
 			votable->name,
 			client_id, val, state ? "on" : "off");
 	switch (votable->type) {
@@ -200,7 +200,7 @@ int vote(struct votable *votable, int client_id, bool state, int val)
 	if (effective_result != votable->effective_result) {
 		votable->effective_client_id = effective_id;
 		votable->effective_result = effective_result;
-		pr_debug("%s: effective vote is now %d voted by %d\n",
+		pr_info("%s: effective vote is now %d voted by %d\n",
 				votable->name, effective_result, effective_id);
 		rc = votable->callback(votable->dev, effective_result,
 					effective_id, val, client_id);
@@ -223,11 +223,7 @@ struct votable *create_votable(struct device *dev, const char *name,
 					)
 {
 	int i;
-	struct votable *votable = devm_kzalloc(dev, sizeof(struct votable),
-							GFP_KERNEL);
-
-	if (!votable)
-		return ERR_PTR(-ENOMEM);
+	struct votable *votable;
 
 	if (!callback) {
 		dev_err(dev, "Invalid callback specified for voter\n");
@@ -243,6 +239,10 @@ struct votable *create_votable(struct device *dev, const char *name,
 		dev_err(dev, "Invalid num_clients specified for voter\n");
 		return ERR_PTR(-EINVAL);
 	}
+
+	votable = devm_kzalloc(dev, sizeof(struct votable), GFP_KERNEL);
+	if (!votable)
+		return ERR_PTR(-ENOMEM);
 
 	votable->dev = dev;
 	votable->name = name;

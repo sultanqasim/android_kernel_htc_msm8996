@@ -329,16 +329,27 @@ void fsnotify_clear_marks_by_group_flags(struct fsnotify_group *group,
 					 unsigned int flags)
 {
 	struct fsnotify_mark *lmark, *mark;
+	LIST_HEAD(to_free);
 
 	mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
 	list_for_each_entry_safe(mark, lmark, &group->marks_list, g_list) {
-		if (mark->flags & flags) {
-			fsnotify_get_mark(mark);
-			fsnotify_destroy_mark_locked(mark, group);
-			fsnotify_put_mark(mark);
-		}
+		if (mark->flags & flags)
+			list_move(&mark->g_list, &to_free);
 	}
 	mutex_unlock(&group->mark_mutex);
+
+	while (1) {
+		mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
+		if (list_empty(&to_free)) {
+			mutex_unlock(&group->mark_mutex);
+			break;
+		}
+		mark = list_first_entry(&to_free, struct fsnotify_mark, g_list);
+		fsnotify_get_mark(mark);
+		fsnotify_destroy_mark_locked(mark, group);
+		mutex_unlock(&group->mark_mutex);
+		fsnotify_put_mark(mark);
+	}
 }
 
 /*

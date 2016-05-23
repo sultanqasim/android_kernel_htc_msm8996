@@ -2099,8 +2099,6 @@ static int ipa_wwan_remove(struct platform_device *pdev)
 	ipa_del_mux_qmap_hdrs();
 	if (ipa_qmi_ctx && ipa_qmi_ctx->modem_cfg_emb_pipe_flt == false)
 		wwan_del_ul_flt_rule_to_ipa();
-	/* clean up cached QMI msg/handlers */
-	ipa_qmi_service_exit();
 	ipa_cleanup_deregister_intf();
 	atomic_set(&is_initialized, 0);
 	pr_info("rmnet_ipa completed deinitialization\n");
@@ -2228,6 +2226,9 @@ static int ssr_notifier_cb(struct notifier_block *this,
 		}
 		if (SUBSYS_BEFORE_POWERUP == code) {
 			pr_info("IPA received MPSS BEFORE_POWERUP\n");
+			if (atomic_read(&is_ssr))
+				
+				ipa_qmi_service_exit();
 			ipa2_proxy_clk_vote();
 			pr_info("IPA BEFORE_POWERUP handling is complete\n");
 			return NOTIFY_DONE;
@@ -2490,7 +2491,7 @@ int rmnet_ipa_query_tethering_stats(struct wan_ioctl_query_tether_stats *data,
 {
 	struct ipa_get_data_stats_req_msg_v01 *req;
 	struct ipa_get_data_stats_resp_msg_v01 *resp;
-	int pipe_len, rc;
+	int pipe_len, rc = -ENOMEM;
 
 	req = kzalloc(sizeof(struct ipa_get_data_stats_req_msg_v01),
 			GFP_KERNEL);

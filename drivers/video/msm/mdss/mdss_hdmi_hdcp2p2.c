@@ -74,6 +74,8 @@ struct hdmi_hdcp2p2_ctrl {
 	struct kthread_work send_msg;
 	struct kthread_work recv_msg;
 	struct kthread_work link;
+
+	u8 hdcp2version;
 };
 
 static int hdmi_hdcp2p2_auth(struct hdmi_hdcp2p2_ctrl *ctrl);
@@ -599,8 +601,6 @@ static int hdmi_hdcp2p2_read_version(struct hdmi_hdcp2p2_ctrl *ctrl,
 static ssize_t hdmi_hdcp2p2_sysfs_rda_hdcp2_version(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-	u8 hdcp2version;
-	ssize_t ret;
 	struct hdmi_hdcp2p2_ctrl *ctrl =
 		hdmi_get_featuredata_from_sysfs_dev(dev, HDMI_TX_FEAT_HDCP2P2);
 
@@ -608,10 +608,8 @@ static ssize_t hdmi_hdcp2p2_sysfs_rda_hdcp2_version(struct device *dev,
 		pr_err("invalid input\n");
 		return -EINVAL;
 	}
-	ret = hdmi_hdcp2p2_read_version(ctrl, &hdcp2version);
-	if (ret < 0)
-		return ret;
-	return snprintf(buf, PAGE_SIZE, "%u\n", hdcp2version);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", ctrl->hdcp2version);
 }
 
 
@@ -1141,6 +1139,9 @@ static bool hdmi_hdcp2p2_supported(struct hdmi_hdcp2p2_ctrl *ctrl)
 	int rc = hdmi_hdcp2p2_read_version(ctrl, &hdcp2version);
 	if (rc)
 		goto error;
+
+	if (ctrl)
+		ctrl->hdcp2version = hdcp2version;
 
 	if (hdcp2version & BIT(2)) {
 		pr_debug("Sink is HDCP 2.2 capable\n");

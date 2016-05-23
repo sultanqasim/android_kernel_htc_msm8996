@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -5008,6 +5008,7 @@ int ipa2_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_get_smem_restr_bytes = ipa2_get_smem_restr_bytes;
 	api_ctrl->ipa_uc_wdi_get_dbpa = ipa2_uc_wdi_get_dbpa;
 	api_ctrl->ipa_uc_reg_rdyCB = ipa2_uc_reg_rdyCB;
+	api_ctrl->ipa_uc_dereg_rdyCB = ipa2_uc_dereg_rdyCB;
 	api_ctrl->ipa_create_wdi_mapping = ipa2_create_wdi_mapping;
 	api_ctrl->ipa_release_wdi_mapping = ipa2_release_wdi_mapping;
 	api_ctrl->ipa_rm_create_resource = ipa2_rm_create_resource;
@@ -5110,8 +5111,9 @@ void ipa_suspend_apps_pipes(bool suspend)
 	cfg.ipa_ep_suspend = suspend;
 
 	ipa_ep_idx = ipa_get_ep_mapping(IPA_CLIENT_APPS_LAN_CONS);
-	ep = &ipa_ctx->ep[ipa_ep_idx];
-	if (ep->valid) {
+	if(ipa_ep_idx >= 0)
+		ep = &ipa_ctx->ep[ipa_ep_idx];
+	if (ep && ep->valid) {
 		ipa2_cfg_ep_ctrl(ipa_ep_idx, &cfg);
 		/* Check if the pipes are empty. */
 		ret = sps_is_pipe_empty(ep->ep_hdl, &lan_empty);

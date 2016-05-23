@@ -17,11 +17,9 @@
 
 #include "mci/mcloadformat.h"
 
-/** Indicates a response */
-#define FLAG_RESPONSE       BIT(31)
+#define FLAG_RESPONSE		BIT(31)
 
-/** Maximum number of buffers that can be mapped at once */
-#define MCP_MAP_MAX_BUF        4
+#define MCP_MAP_MAX_BUF		4
 
 /** MobiCore Return Code Defines.
  * List of the possible MobiCore return codes.
@@ -137,10 +135,17 @@ enum cmd_id {
 #define WSM_L2			2	/** Buffer mapping uses L2/L3 table */
 #define WSM_L1			3	/** Buffer mapping uses fake L1 table */
 
-/** Magic number used to identify if Open Command supports GP client
- * authentication.
- */
-#define MC_GP_CLIENT_AUTH_MAGIC	0x47504131	/* "GPA1" */
+#define MC_GP_CLIENT_AUTH_MAGIC	0x47504131	
+
+#define MC_IV_FLAG_IRQ		BIT(0)	
+#define MC_IV_FLAG_TIME		BIT(1)	
+
+struct init_values {
+	u32	flags;
+	u32	irq;
+	u32	time_ofs;
+	u32	time_len;
+};
 
 /** Command header.
  * It just contains the command ID. Only values specified in cmd_id are
@@ -158,8 +163,8 @@ struct cmd_header {
  * response is written to the same memory location as the MCP command.
  */
 struct rsp_header {
-	uint32_t	rsp_id;	/** Command ID | FLAG_RESPONSE */
-	enum mcp_result	result;		/** Result of the command execution */
+	u32		rsp_id;	
+	enum mcp_result	result;	
 };
 
 /** @defgroup CMD MCP Commands
@@ -180,8 +185,8 @@ struct cmd_get_version {
 
 /** Get MobiCore Version Command Response */
 struct rsp_get_version {
-	struct rsp_header	rsp_header;	/** Response header */
-	struct mc_version_info version_info;	/** MobiCore version info */
+	struct rsp_header	rsp_header;	
+	struct mc_version_info	version_info;	
 };
 
 /** @defgroup POWERCMD Power Management Commands
@@ -236,45 +241,46 @@ struct rsp_resume {
 
 /** GP client authentication data */
 struct cmd_open_data {
-	uint32_t	mclf_magic;	/** ASCII "MCLF" on older versions */
-	struct identity	identity;	/** Login method and data */
+	u32		mclf_magic;	
+	struct identity	identity;	
 };
 
 /** Open Command */
 struct cmd_open {
-	struct cmd_header cmd_header;	/** Command header */
-	struct mc_uuid_t uuid;		/** Service UUID */
-	uint8_t		unused[4];	/** Padding to be 64-bit aligned */
-	uint64_t	adr_tci_buffer;	/** Physical address of the TCI MMU */
-	uint64_t	adr_load_data;	/** Physical address of the data MMU */
-	uint32_t	ofs_tci_buffer;	/** Offset to the data */
-	uint32_t	len_tci_buffer;	/** Length of the TCI */
-	uint32_t	wsmtype_tci;	/** Type of WSM used for the TCI */
-	uint32_t	wsm_data_type;	/** Type of MMU */
-	uint32_t	ofs_load_data;	/** Offset to the data */
-	uint32_t	len_load_data;	/** Length of the data to load */
+	struct cmd_header cmd_header;	
+	struct mc_uuid_t uuid;		
+	u8		unused[4];	
+	u64		adr_tci_buffer;	
+	u64		adr_load_data;	
+	u32		ofs_tci_buffer;	
+	u32		len_tci_buffer;	
+	u32		wsmtype_tci;	
+	u32		wsm_data_type;	
+	u32		ofs_load_data;	
+	u32		len_load_data;	
 	union {
 		struct cmd_open_data	cmd_open_data;	/** Client login data */
 		union mclf_header	tl_header;	/** Service header */
 	};
-	uint32_t	is_gpta;	/** true if looking for an SD/GP-TA */
+	u32		is_gpta;	
 };
 
 /** Open Command Response */
 struct rsp_open {
-	struct rsp_header	rsp_header;	/** Response header */
-	uint32_t	session_id;	/** Session ID */
+	struct rsp_header	rsp_header;	
+	u32	session_id;	
 };
 
 /** TA Load Check Command */
 struct cmd_check_load {
-	struct cmd_header cmd_header;	/** Command header */
-	struct mc_uuid_t uuid;		/** Service UUID */
-	uint64_t	adr_load_data;	/** Physical address of the data */
-	uint32_t	wsm_data_type;	/** Type of MMU */
-	uint32_t	ofs_load_data;	/** Offset to the data */
-	uint32_t	len_load_data;	/** Length of the data to load */
-	union mclf_header tl_header;	/** Service header */
+	struct cmd_header cmd_header;	
+	struct mc_uuid_t uuid;	
+	u8      unused[4];      
+	u64		adr_load_data;	
+	u32		wsm_data_type;	
+	u32		ofs_load_data;	
+	u32		len_load_data;	
+	union mclf_header tl_header;	
 };
 
 /** TA Load Check Response */
@@ -296,8 +302,8 @@ struct rsp_check_load {
 
 /** Close Command */
 struct cmd_close {
-	struct cmd_header	cmd_header;	/** Command header */
-	uint32_t		session_id;	/** Session ID */
+	struct cmd_header	cmd_header;	
+	u32		session_id;	
 };
 
 /** Close Command Response */
@@ -314,21 +320,22 @@ struct rsp_close {
 
 /** Map Command */
 struct cmd_map {
-	struct cmd_header cmd_header;	/** Command header */
-	uint32_t	session_id;	/** Session ID */
-	uint32_t	wsm_type;	/** Type of MMU */
-	uint32_t	ofs_buffer;	/** Offset to the payload */
-	uint64_t	adr_buffer;	/** Physical address of the MMU */
-	uint32_t	len_buffer;	/** Length of the buffer */
+	struct cmd_header cmd_header;	
+	u32		session_id;	
+	u32		wsm_type;	
+	u32		ofs_buffer;	
+	u64		adr_buffer;	
+	u32		len_buffer;	
+	u8		unused[4];	
 };
 
 #define MCP_MAP_MAX         0x100000    /** Maximum length for MCP map */
 
 /** Map Command Response */
 struct rsp_map {
-	struct rsp_header	rsp_header;	/** Response header */
-	/** Virtual address the WSM is mapped to, may include an offset! */
-	uint32_t		secure_va;
+	struct rsp_header rsp_header;	
+	
+	u32		secure_va;
 };
 
 /** @defgroup MCPUNMAP UNMAP
@@ -343,17 +350,17 @@ struct rsp_map {
 
 /** Unmap Command */
 struct cmd_unmap {
-	struct cmd_header cmd_header;	/** Command header */
-	uint32_t	session_id;	/** Session ID */
-	uint32_t	wsm_type;	/** Type of WSM used of the memory */
-	/** Virtual address the WSM is mapped to, may include an offset! */
-	uint32_t	secure_va;
-	uint32_t	virtual_buffer_len;  /** Length of virtual buffer */
+	struct cmd_header cmd_header;	
+	u32		session_id;	
+	u32		wsm_type;	
+	
+	u32		secure_va;
+	u32		virtual_buffer_len;  
 };
 
 /** Unmap Command Response */
 struct rsp_unmap {
-	struct rsp_header	rsp_header;	/** Response header */
+	struct rsp_header rsp_header;	
 };
 
 /** @defgroup MCPLOADTOKEN
@@ -363,16 +370,16 @@ struct rsp_unmap {
 
 /** Load Token */
 struct cmd_load_token {
-	struct cmd_header cmd_header;	/** Command header */
-	uint32_t	wsm_data_type;	/** Type of MMU */
-	uint64_t	adr_load_data;	/** Physical address of the MMU */
-	uint64_t	ofs_load_data;	/** Offset to the data */
-	uint64_t	len_load_data;	/** Length of the data */
+	struct cmd_header cmd_header;	
+	u32		wsm_data_type;	
+	u64		adr_load_data;	
+	u64		ofs_load_data;	
+	u64		len_load_data;	
 };
 
 /** Load Token Command Response */
 struct rsp_load_token {
-	struct rsp_header	rsp_header;	/** Response header */
+	struct rsp_header rsp_header;	
 };
 
 /** @defgroup MCPMULTIMAP MULTIMAP
@@ -389,24 +396,25 @@ struct rsp_load_token {
  * more than NWd kernel is trusted.
  */
 struct buffer_map {
-	uint64_t		adr_buffer;	/**< Physical address */
-	uint32_t		ofs_buffer;	/**< Offset of buffer */
-	uint32_t		len_buffer;	/**< Length of buffer */
-	uint32_t		wsm_type;	/**< Type of address */
+	u64		adr_buffer;	
+	u32		ofs_buffer;	
+	u32		len_buffer;	
+	u32		wsm_type;	
+	u8		unused[4];	
 };
 
 /** MultiMap Command */
 struct cmd_multimap {
-	struct cmd_header	cmd_header;	/** Command header */
-	uint32_t		session_id;	/** Session ID */
-	struct buffer_map	bufs[MC_MAP_MAX]; /** NWd buffer info */
+	struct cmd_header cmd_header;	
+	u32		session_id;	
+	struct buffer_map bufs[MC_MAP_MAX]; 
 };
 
 /** Multimap Command Response */
 struct rsp_multimap {
-	struct rsp_header	rsp_header;	/** Response header */
-	/** Virtual address the WSM is mapped to, may include an offset! */
-	uint64_t		secure_va[MC_MAP_MAX];
+	struct rsp_header rsp_header;	
+	
+	u64		secure_va[MC_MAP_MAX];
 };
 
 /** @defgroup MCPMULTIUNMAP MULTIUNMAP
@@ -425,25 +433,27 @@ struct rsp_multimap {
  * than NWd kernel is trusted.
  */
 struct buffer_unmap {
-	uint64_t		secure_va;	/**< Secure virtual address */
-	uint32_t		len_buffer;	/**< Length of buffer */
+	u64		secure_va;	
+	u32		len_buffer;	
+	u8		unused[4];	
 };
 
 /** Multiunmap Command */
 struct cmd_multiunmap {
-	struct cmd_header	cmd_header;	/** Command header */
-	uint32_t		session_id;	/** Session ID */
-	struct buffer_unmap	bufs[MC_MAP_MAX]; /** NWd buffer info */
+	struct cmd_header cmd_header;	
+	u32		session_id;	
+	struct buffer_unmap bufs[MC_MAP_MAX]; 
 };
 
 /** Multiunmap Command Response */
 struct rsp_multiunmap {
-	struct rsp_header	rsp_header;	/** Response header */
+	struct rsp_header rsp_header;	
 };
 
 /** Structure of the MCP buffer */
 union mcp_message {
-	struct cmd_header	cmd_header;	/** Command header */
+	struct init_values	init_values;	
+	struct cmd_header	cmd_header;	
 	struct rsp_header	rsp_header;
 	struct cmd_open		cmd_open;	/** Load and open service */
 	struct rsp_open		rsp_open;
@@ -479,19 +489,19 @@ union mcp_message {
 #define MC_STATE_READY_TO_SLEEP   1
 
 struct sleep_mode {
-	uint16_t	sleep_req;	/** Ask SWd to get ready to sleep */
-	uint16_t	ready_to_sleep;	/** SWd is now ready to sleep */
+	u16		sleep_req;	
+	u16		ready_to_sleep;	
 };
 
 /** MobiCore status flags */
 struct mcp_flags {
-	/** If not MC_FLAG_SCHEDULE_IDLE, MobiCore needsscheduling */
-	uint32_t	schedule;
+	
+	u32		schedule;
 	struct sleep_mode sleep_mode;
-	/** Secure-world sleep timeout in milliseconds */
-	int32_t		timeout_ms;
-	/** Reserved for future use: Must not be interpreted */
-	uint32_t	RFU3;
+	
+	s32		timeout_ms;
+	
+	u32		RFU3;
 };
 
 /** MobiCore is idle. No scheduling required */
@@ -501,8 +511,8 @@ struct mcp_flags {
 
 /** MCP buffer structure */
 struct mcp_buffer {
-	struct mcp_flags	mc_flags;	/** MobiCore Flags */
-	union mcp_message	mcp_message;	/** MCP message buffer */
+	struct mcp_flags flags;		
+	union mcp_message message;	
 };
 
 #endif /* MCP_H_ */

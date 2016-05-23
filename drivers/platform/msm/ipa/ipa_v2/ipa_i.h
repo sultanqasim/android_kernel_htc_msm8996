@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -606,36 +606,16 @@ struct ipa_status_stats {
 	int curr;
 };
 
-/**
- * struct ipa_ep_context - IPA end point context
- * @valid: flag indicating id EP context is valid
- * @client: EP client type
- * @ep_hdl: EP's client SPS handle
- * @cfg: EP cionfiguration
- * @dst_pipe_index: destination pipe index
- * @rt_tbl_idx: routing table index
- * @connect: SPS connect
- * @priv: user provided information which will forwarded once the user is
- *        notified for new data avail
- * @client_notify: user provided CB for EP events notification, the event is
- *                 data revived.
- * @desc_fifo_in_pipe_mem: flag indicating if descriptors FIFO uses pipe memory
- * @data_fifo_in_pipe_mem: flag indicating if data FIFO uses pipe memory
- * @desc_fifo_pipe_mem_ofst: descriptors FIFO pipe memory offset
- * @data_fifo_pipe_mem_ofst: data FIFO pipe memory offset
- * @desc_fifo_client_allocated: if descriptors FIFO was allocated by a client
- * @data_fifo_client_allocated: if data FIFO was allocated by a client
- * @skip_ep_cfg: boolean field that determines if EP should be configured
- *  by IPA driver
- * @keep_ipa_awake: when true, IPA will not be clock gated
- * @rx_replenish_threshold: Indicates the WM value which requires the RX
- *                          descriptors replenish function to be called to
- *                          avoid the RX pipe to run out of descriptors
- *                          and cause HOLB.
- * @disconnect_in_progress: Indicates client disconnect in progress.
- * @qmi_request_sent: Indicates whether QMI request to enable clear data path
- *					request is sent or not.
- */
+enum ipa_wakelock_ref_client {
+	IPA_WAKELOCK_REF_CLIENT_TX  = 0,
+	IPA_WAKELOCK_REF_CLIENT_LAN_RX = 1,
+	IPA_WAKELOCK_REF_CLIENT_WAN_RX = 2,
+	IPA_WAKELOCK_REF_CLIENT_WLAN_RX = 3,
+	IPA_WAKELOCK_REF_CLIENT_ODU_RX = 4,
+	IPA_WAKELOCK_REF_CLIENT_SPS = 5,
+	IPA_WAKELOCK_REF_CLIENT_MAX
+};
+
 struct ipa_ep_context {
 	int valid;
 	enum ipa_client_type client;
@@ -665,6 +645,7 @@ struct ipa_ep_context {
 	u32 rx_replenish_threshold;
 	bool disconnect_in_progress;
 	u32 qmi_request_sent;
+	enum ipa_wakelock_ref_client wakelock_client;
 
 	/* sys MUST be the last element of this struct */
 	struct ipa_sys_context *sys;
@@ -915,7 +896,7 @@ struct ipa_active_clients {
 
 struct ipa_wakelock_ref_cnt {
 	spinlock_t spinlock;
-	int cnt;
+	u32 cnt;
 };
 
 struct ipa_tag_completion {
@@ -1763,6 +1744,7 @@ int ipa2_uc_wdi_get_dbpa(struct ipa_wdi_db_params *out);
  * if uC not ready only, register callback
  */
 int ipa2_uc_reg_rdyCB(struct ipa_wdi_uc_ready_params *param);
+int ipa2_uc_dereg_rdyCB(void);
 
 /*
  * Resource manager
@@ -2133,7 +2115,7 @@ void ipa_flow_control(enum ipa_client_type ipa_client, bool enable,
 			uint32_t qmap_id);
 int ipa2_restore_suspend_handler(void);
 void ipa_sps_irq_control_all(bool enable);
-void ipa_inc_acquire_wakelock(void);
-void ipa_dec_release_wakelock(void);
+void ipa_inc_acquire_wakelock(enum ipa_wakelock_ref_client ref_client);
+void ipa_dec_release_wakelock(enum ipa_wakelock_ref_client ref_client);
 const char *ipa_rm_resource_str(enum ipa_rm_resource_name resource_name);
 #endif /* _IPA_I_H_ */

@@ -588,17 +588,19 @@ const struct file_operations bad_sock_fops = {
 	.llseek = noop_llseek,
 };
 
-/**
- *	sock_release	-	close a socket
- *	@sock: socket to close
- *
- *	The socket is released from the protocol stack if it has a release
- *	callback, and the inode is then released if the socket is bound to
- *	an inode not a file.
- */
+#ifdef CONFIG_HTC_GARBAGE_FILTER
+extern int add_or_remove_port(struct sock *sk, int add_or_remove);
+#endif
 
 void sock_release(struct socket *sock)
 {
+	
+        #ifdef CONFIG_HTC_GARBAGE_FILTER
+	if (sock->sk != NULL)
+		add_or_remove_port(sock->sk, 0);
+        #endif
+	
+
 	if (sock->ops) {
 		struct module *owner = sock->ops->owner;
 
@@ -1596,6 +1598,13 @@ SYSCALL_DEFINE2(listen, int, fd, int, backlog)
 				sock_put(sock->sk);
 		}
 		fput_light(sock->file, fput_needed);
+
+		
+                #ifdef CONFIG_HTC_GARBAGE_FILTER
+		if (sock->sk != NULL)
+			add_or_remove_port(sock->sk, 1);
+                #endif
+		
 	}
 	return err;
 }
@@ -3156,11 +3165,11 @@ struct rtentry32 {
 	unsigned char	rt_tos;
 	unsigned char	rt_class;
 	short		rt_pad4;
-	short		rt_metric;      /* +1 for binary compatibility! */
-	/* char * */ u32 rt_dev;        /* forcing the device at add    */
-	u32		rt_mtu;         /* per route MTU/Window         */
-	u32		rt_window;      /* Window clamping              */
-	unsigned short  rt_irtt;        /* Initial RTT                  */
+	short		rt_metric;      
+	 u32 rt_dev;        
+	u32		rt_mtu;         
+	u32		rt_window;      
+	unsigned short  rt_irtt;        
 };
 
 struct in6_rtmsg32 {

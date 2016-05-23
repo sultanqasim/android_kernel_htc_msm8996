@@ -65,6 +65,7 @@ struct cpufreq_interactive_cpuinfo {
 	unsigned int loadadjfreq;
 };
 
+
 static DEFINE_PER_CPU(struct cpufreq_interactive_policyinfo *, polinfo);
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
@@ -153,6 +154,7 @@ struct cpufreq_interactive_tunables {
 
 	/* Ignore min_sample_time for notification */
 	bool fast_ramp_down;
+	int new_task_ratio;
 };
 
 /* For cases where we have single governor instance for system */
@@ -504,7 +506,7 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 		trace_cpufreq_interactive_cpuload(i, cpu_load, new_load_pct);
 
 		if (cpu_load >= tunables->go_hispeed_load &&
-		    new_load_pct >= NEW_TASK_RATIO) {
+		    (tunables->new_task_ratio > 0 && new_load_pct >= tunables->new_task_ratio)) {
 			skip_hispeed_logic = true;
 			jump_to_max = true;
 		}
@@ -1011,6 +1013,24 @@ static ssize_t store_go_hispeed_load(struct cpufreq_interactive_tunables
 	return count;
 }
 
+static ssize_t show_new_task_ratio(struct cpufreq_interactive_tunables
+		*tunables, char *buf)
+{
+	return sprintf(buf, "%d\n", tunables->new_task_ratio);
+}
+
+static ssize_t store_new_task_ratio(struct cpufreq_interactive_tunables
+		*tunables, const char *buf, size_t count)
+{
+	int ret;
+	int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+	tunables->new_task_ratio = val;
+	return count;
+}
 static ssize_t show_min_sample_time(struct cpufreq_interactive_tunables
 		*tunables, char *buf)
 {
@@ -1385,6 +1405,7 @@ show_store_gov_pol_sys(max_freq_hysteresis);
 show_store_gov_pol_sys(align_windows);
 show_store_gov_pol_sys(ignore_hispeed_on_notif);
 show_store_gov_pol_sys(fast_ramp_down);
+show_store_gov_pol_sys(new_task_ratio);
 
 #define gov_sys_attr_rw(_name)						\
 static struct global_attr _name##_gov_sys =				\
@@ -1414,6 +1435,7 @@ gov_sys_pol_attr_rw(max_freq_hysteresis);
 gov_sys_pol_attr_rw(align_windows);
 gov_sys_pol_attr_rw(ignore_hispeed_on_notif);
 gov_sys_pol_attr_rw(fast_ramp_down);
+gov_sys_pol_attr_rw(new_task_ratio);
 
 static struct global_attr boostpulse_gov_sys =
 	__ATTR(boostpulse, 0200, NULL, store_boostpulse_gov_sys);
@@ -1440,6 +1462,7 @@ static struct attribute *interactive_attributes_gov_sys[] = {
 	&align_windows_gov_sys.attr,
 	&ignore_hispeed_on_notif_gov_sys.attr,
 	&fast_ramp_down_gov_sys.attr,
+	&new_task_ratio_gov_sys.attr,
 	NULL,
 };
 
@@ -1467,6 +1490,7 @@ static struct attribute *interactive_attributes_gov_pol[] = {
 	&align_windows_gov_pol.attr,
 	&ignore_hispeed_on_notif_gov_pol.attr,
 	&fast_ramp_down_gov_pol.attr,
+	&new_task_ratio_gov_pol.attr,
 	NULL,
 };
 
@@ -1506,6 +1530,7 @@ static struct cpufreq_interactive_tunables *alloc_tunable(
 	tunables->timer_rate = DEFAULT_TIMER_RATE;
 	tunables->boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
 	tunables->timer_slack_val = DEFAULT_TIMER_SLACK;
+	tunables->new_task_ratio = NEW_TASK_RATIO;
 
 	spin_lock_init(&tunables->target_loads_lock);
 	spin_lock_init(&tunables->above_hispeed_delay_lock);
@@ -1777,7 +1802,7 @@ static int __init cpufreq_interactive_init(void)
 }
 
 #ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE
-fs_initcall(cpufreq_interactive_init);
+arch_initcall(cpufreq_interactive_init);
 #else
 module_init(cpufreq_interactive_init);
 #endif

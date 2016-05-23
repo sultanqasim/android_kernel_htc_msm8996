@@ -48,6 +48,12 @@
 #define STM_RSP_STATUS_INDEX		8
 #define STM_RSP_NUM_BYTES		9
 
+#define SMD_DRAIN_BUF_SIZE 4096
+extern unsigned diag7k_debug_mask;
+extern unsigned diag9k_debug_mask;
+bool DM_enable = false;
+int diag_debug_buf_idx;
+unsigned char diag_debug_buf[1024];
 static int timestamp_switch;
 module_param(timestamp_switch, int, 0644);
 
@@ -155,6 +161,7 @@ int chk_apps_only(void)
 	case MSM_CPU_8627:
 	case MSM_CPU_9615:
 	case MSM_CPU_8974:
+	case MSM_CPU_8996:
 		return 1;
 	default:
 		return 0;
@@ -216,18 +223,10 @@ void chk_logging_wakeup(void)
 		for (i = 0; i < driver->num_clients; i++) {
 			if (driver->client_map[i].pid != pid)
 				continue;
-			if (driver->data_ready[i] & USER_SPACE_DATA_TYPE)
+			if (driver->data_ready[i] & USERMODE_DIAGFWD)
 				continue;
-			/*
-			 * At very high logging rates a race condition can
-			 * occur where the buffers containing the data from
-			 * a channel are all in use, but the data_ready flag
-			 * is cleared. In this case, the buffers never have
-			 * their data read/logged. Detect and remedy this
-			 * situation.
-			 */
-			driver->data_ready[i] |= USER_SPACE_DATA_TYPE;
-			pr_debug("diag: Force wakeup of logging process\n");
+			driver->data_ready[i] |= USERMODE_DIAGFWD;
+			DIAG_DBUG("diag: Force wakeup of logging process\n");
 			wake_up_interruptible(&driver->wait_q);
 			break;
 		}
@@ -899,7 +898,7 @@ int diag_process_apps_pkt(unsigned char *buf, int len,
 	entry.cmd_code_lo = (uint16_t)(*(uint16_t *)temp);
 	temp += sizeof(uint16_t);
 
-	pr_debug("diag: In %s, received cmd %02x %02x %02x\n",
+	DIAGFWD_INFO("diag: In %s, received cmd %02x %02x %02x\n",
 		 __func__, entry.cmd_code, entry.subsys_id, entry.cmd_code_hi);
 
 	if (*buf == DIAG_CMD_LOG_ON_DMND && driver->log_on_demand_support &&
@@ -1074,12 +1073,7 @@ int diag_process_apps_pkt(unsigned char *buf, int len,
 		 */
 		mutex_lock(&driver->hdlc_disable_mutex);
 		diag_send_rsp(driver->apps_rsp_buf, write_len);
-		/*
-		 * Set the value of hdlc_disabled after sending the response to
-		 * the tools. This is required since the tools is expecting a
-		 * HDLC encoded reponse for this request.
-		 */
-		pr_debug("diag: In %s, disabling HDLC encoding\n",
+		DIAGFWD_DBUG("diag: In %s, disabling HDLC encoding\n",
 		       __func__);
 		if (info)
 			info->hdlc_disabled = 1;
@@ -1110,7 +1104,7 @@ void diag_process_hdlc_pkt(void *data, unsigned len,
 	}
 
 	mutex_lock(&driver->diag_hdlc_mutex);
-	pr_debug("diag: In %s, received packet of length: %d, req_buf_len: %d\n",
+	DIAGFWD_DBUG("diag: In %s, received packet of length: %d, req_buf_len: %d\n",
 		 __func__, len, driver->hdlc_buf_len);
 
 	if (driver->hdlc_buf_len >= DIAG_MAX_REQ_SIZE) {
@@ -1119,13 +1113,13 @@ void diag_process_hdlc_pkt(void *data, unsigned len,
 		goto fail;
 	}
 
+	DIAGFWD_DBUG("HDLC decode fn, len of data  %d\n", len);
 	hdlc_decode->dest_ptr = driver->hdlc_buf + driver->hdlc_buf_len;
 	hdlc_decode->dest_size = DIAG_MAX_HDLC_BUF_SIZE - driver->hdlc_buf_len;
 	hdlc_decode->src_ptr = data;
 	hdlc_decode->src_size = len;
 	hdlc_decode->src_idx = 0;
 	hdlc_decode->dest_idx = 0;
-
 	ret = diag_hdlc_decode(hdlc_decode);
 	/*
 	 * driver->hdlc_buf is of size DIAG_MAX_HDLC_BUF_SIZE. But the decoded
@@ -1189,6 +1183,7 @@ static int diagfwd_mux_open(int id, int mode)
 
 	switch (mode) {
 	case DIAG_USB_MODE:
+		driver->qxdmusb_drop = 0;
 		driver->usb_connected = 1;
 		break;
 	case DIAG_MEMORY_DEVICE_MODE:
@@ -1222,6 +1217,7 @@ static int diagfwd_mux_close(int id, int mode)
 
 	switch (mode) {
 	case DIAG_USB_MODE:
+		driver->qxdmusb_drop = 1;
 		driver->usb_connected = 0;
 		break;
 	case DIAG_MEMORY_DEVICE_MODE:
@@ -1241,11 +1237,13 @@ static int diagfwd_mux_close(int id, int mode)
 		 */
 	} else {
 		for (i = 0; i < NUM_PERIPHERALS; i++) {
-			diagfwd_close(i, TYPE_DATA);
-			diagfwd_close(i, TYPE_CMD);
+			if (!DM_enable) { 
+				diagfwd_close(i, TYPE_DATA);
+				diagfwd_close(i, TYPE_CMD);
+			}
 		}
-		/* Re enable HDLC encoding */
-		pr_debug("diag: In %s, re-enabling HDLC encoding\n",
+		
+		DIAGFWD_DBUG("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
 		mutex_lock(&driver->hdlc_disable_mutex);
 		if (driver->md_session_mode == DIAG_MD_NONE)
@@ -1276,7 +1274,7 @@ static void hdlc_reset_timer_start(struct diag_md_session_t *info)
 
 static void hdlc_reset_timer_func(unsigned long data)
 {
-	pr_debug("diag: In %s, re-enabling HDLC encoding\n",
+	DIAGFWD_DBUG("diag: In %s, re-enabling HDLC encoding\n",
 		       __func__);
 	if (hdlc_reset) {
 		driver->hdlc_disabled = 0;
@@ -1538,7 +1536,7 @@ int diagfwd_init(void)
 	for (i = 0; i < DIAG_NUM_PROC; i++)
 		driver->real_time_mode[i] = 1;
 	driver->supports_separate_cmdrsp = 1;
-	driver->supports_apps_hdlc_encoding = 1;
+	driver->supports_apps_hdlc_encoding = 0;
 	mutex_init(&driver->diag_hdlc_mutex);
 	mutex_init(&driver->diag_cntl_mutex);
 	mutex_init(&driver->mode_lock);

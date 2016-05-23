@@ -82,7 +82,7 @@ static struct debugfs_blob_wrapper help_msg = {
 
 };
 
-static void add_to_ptable(uint64_t *arg)
+void add_to_ptable(uint64_t *arg)
 {
 	struct core_debug *node;
 	int i, cpu = arg[CPU_OFFSET];
@@ -130,6 +130,7 @@ static void add_to_ptable(uint64_t *arg)
 	if (node->ptr)
 		node->ptr->len = node->len;
 }
+EXPORT_SYMBOL(add_to_ptable);
 
 static int split_ptable_args(char *line, uint64_t *arg)
 {

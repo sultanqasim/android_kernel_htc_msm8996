@@ -325,7 +325,7 @@ static u32 mdss_mdp_perf_calc_pipe_prefill_video(struct mdss_mdp_prefill_params
 	u32 y_buf_bytes = 0;
 	u32 y_scaler_bytes = 0;
 	u32 pp_bytes = 0, pp_lines = 0;
-	u32 post_scaler_bytes;
+	u32 post_scaler_bytes = 0;
 	u32 fbc_bytes = 0;
 
 	prefill_bytes = prefill->ot_bytes;
@@ -1519,7 +1519,7 @@ int mdss_mdp_perf_bw_check_pipe(struct mdss_mdp_perf_params *perf,
 {
 	struct mdss_data_type *mdata = pipe->mixer_left->ctl->mdata;
 	struct mdss_mdp_ctl *ctl = pipe->mixer_left->ctl;
-	u32 vbp_fac, threshold;
+	u32 vbp_fac = 0, threshold;
 	u64 prefill_bw, pipe_bw, max_pipe_bw;
 
 	/* we only need bandwidth check on real-time clients (interfaces) */
@@ -2987,7 +2987,8 @@ void mdss_mdp_ctl_dsc_setup(struct mdss_mdp_ctl *ctl,
 		break;
 	case MDP_DUAL_LM_DUAL_DISPLAY:
 		sctl = mdss_mdp_get_split_ctl(ctl);
-		spinfo = &sctl->panel_data->panel_info;
+		if (sctl)
+			spinfo = &sctl->panel_data->panel_info;
 
 		__dsc_setup_dual_lm_dual_display(ctl, pinfo, sctl, spinfo);
 		break;
@@ -3612,6 +3613,8 @@ void mdss_mdp_ctl_restore(bool locked)
 		if (sctl) {
 			mdss_mdp_ctl_restore_sub(sctl);
 			mdss_mdp_ctl_split_display_enable(1, ctl, sctl);
+		} else if (is_pingpong_split(ctl->mfd)) {
+			mdss_mdp_ctl_pp_split_display_enable(true, ctl);
 		}
 		if (ctl->ops.restore_fnc)
 			ctl->ops.restore_fnc(ctl, locked);
@@ -3995,10 +3998,11 @@ void mdss_mdp_set_roi(struct mdss_mdp_ctl *ctl,
 
 	if (ctl->mfd->split_mode == MDP_DUAL_LM_DUAL_DISPLAY) {
 		struct mdss_mdp_ctl *sctl = mdss_mdp_get_split_ctl(ctl);
-
-		mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
-		sctl->roi = sctl->mixer_left->roi;
-	} else if (is_dual_lm_single_display(ctl->mfd)) {
+		if (sctl) {
+			mdss_mdp_set_mixer_roi(sctl->mixer_left, r_roi);
+			sctl->roi = sctl->mixer_left->roi;
+		}
+	} else if (ctl->mixer_right && is_dual_lm_single_display(ctl->mfd)) {
 
 		mdss_mdp_set_mixer_roi(ctl->mixer_right, r_roi);
 

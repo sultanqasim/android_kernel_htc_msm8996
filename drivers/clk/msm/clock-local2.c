@@ -36,10 +36,8 @@
 /* For clock without halt checking, wait this long after enables/disables. */
 #define HALT_CHECK_DELAY_US	500
 
-/*
- * When updating an RCG configuration, check the update bit up to this number
- * number of times (with a 1 us delay in between) before continuing.
- */
+#define RCG_FORCE_DISABLE_DELAY_US	100
+
 #define UPDATE_CHECK_MAX_LOOPS	500
 
 DEFINE_SPINLOCK(local_clock_reg_lock);
@@ -211,6 +209,8 @@ static void rcg_clear_force_enable(struct rcg_clk *rcg)
 	cmd_rcgr_regval &= ~CMD_RCGR_ROOT_ENABLE_BIT;
 	writel_relaxed(cmd_rcgr_regval, CMD_RCGR_REG(rcg));
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
+	
+	udelay(RCG_FORCE_DISABLE_DELAY_US);
 }
 
 static int rcg_clk_enable(struct clk *c)
@@ -291,24 +291,13 @@ static int rcg_clk_set_rate(struct clk *c, unsigned long rate)
 
 	BUG_ON(!rcg->set_rate);
 
-	/*
-	 * Perform clock-specific frequency switch operations.
-	 *
-	 * For RCGs with non_local_children set to true:
-	 * If this RCG has at least one branch that is controlled by another
-	 * execution entity, ensure that the enable/disable and mux switch
-	 * are staggered.
-	 */
-	if (!rcg->non_local_children) {
-		rcg->set_rate(rcg, nf);
-	} else if (c->count) {
-		/*
-		 * Force enable the RCG here since there could be a disable
-		 * call happening between pre_reparent and set_rate.
-		 */
+	
+	if ((rcg->non_local_children && c->count) || rcg->non_local_control) {
 		rcg_set_force_enable(rcg);
 		rcg->set_rate(rcg, nf);
 		rcg_clear_force_enable(rcg);
+	} else if (!rcg->non_local_children) {
+		rcg->set_rate(rcg, nf);
 	}
 	/*
 	 * If non_local_children is set and the RCG is not enabled,

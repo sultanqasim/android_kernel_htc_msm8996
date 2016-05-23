@@ -1044,6 +1044,29 @@ static struct clk_lookup cpu_clocks_8996[] = {
 	CLK_LIST(cpu_debug_mux),
 };
 
+#if defined(CONFIG_HTC_DEBUG_FOOTPRINT)
+int clk_get_cpu_idx(struct clk *c)
+{
+	
+	if (c == &pwrcl_clk.c || c == &pwrcl_hf_mux.c)
+		return 0;
+
+	
+	else if (c == &perfcl_clk.c || c == &perfcl_hf_mux.c)
+		return 2;
+
+	return -1;
+}
+
+int clk_get_l2_idx(struct clk *c)
+{
+	if (c == &cbf_hf_mux.c)
+		return 0;
+
+	return -1;
+}
+#endif
+
 static int of_get_fmax_vdd_class(struct platform_device *pdev, struct clk *c,
 								char *prop_name)
 {

@@ -3199,40 +3199,34 @@ void ipa2_dec_client_disable_clks(struct ipa2_active_client_logging_info *id)
 	ipa_active_clients_unlock();
 }
 
-/**
-* ipa_inc_acquire_wakelock() - Increase active clients counter, and
-* acquire wakelock if necessary
-*
-* Return codes:
-* None
-*/
-void ipa_inc_acquire_wakelock(void)
+void ipa_inc_acquire_wakelock(enum ipa_wakelock_ref_client ref_client)
 {
 	unsigned long flags;
 
+	if (ref_client >= IPA_WAKELOCK_REF_CLIENT_MAX)
+		return;
 	spin_lock_irqsave(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);
-	ipa_ctx->wakelock_ref_cnt.cnt++;
-	if (ipa_ctx->wakelock_ref_cnt.cnt == 1)
+	if (ipa_ctx->wakelock_ref_cnt.cnt & (1 << ref_client))
+		IPAERR("client enum %d mask already set. ref cnt = %d\n",
+		ref_client, ipa_ctx->wakelock_ref_cnt.cnt);
+	ipa_ctx->wakelock_ref_cnt.cnt |= (1 << ref_client);
+	if (ipa_ctx->wakelock_ref_cnt.cnt)
 		__pm_stay_awake(&ipa_ctx->w_lock);
-	IPADBG("active wakelock ref cnt = %d\n", ipa_ctx->wakelock_ref_cnt.cnt);
+	IPADBG("active wakelock ref cnt = %d client enum %d\n",
+		ipa_ctx->wakelock_ref_cnt.cnt, ref_client);
 	spin_unlock_irqrestore(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);
 }
 
-/**
- * ipa_dec_release_wakelock() - Decrease active clients counter
- *
- * In case if the ref count is 0, release the wakelock.
- *
- * Return codes:
- * None
- */
-void ipa_dec_release_wakelock(void)
+void ipa_dec_release_wakelock(enum ipa_wakelock_ref_client ref_client)
 {
 	unsigned long flags;
 
+	if (ref_client >= IPA_WAKELOCK_REF_CLIENT_MAX)
+		return;
 	spin_lock_irqsave(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);
-	ipa_ctx->wakelock_ref_cnt.cnt--;
-	IPADBG("active wakelock ref cnt = %d\n", ipa_ctx->wakelock_ref_cnt.cnt);
+	ipa_ctx->wakelock_ref_cnt.cnt &= ~(1 << ref_client);
+	IPADBG("active wakelock ref cnt = %d client enum %d\n",
+		ipa_ctx->wakelock_ref_cnt.cnt, ref_client);
 	if (ipa_ctx->wakelock_ref_cnt.cnt == 0)
 		__pm_relax(&ipa_ctx->w_lock);
 	spin_unlock_irqrestore(&ipa_ctx->wakelock_ref_cnt.spinlock, flags);

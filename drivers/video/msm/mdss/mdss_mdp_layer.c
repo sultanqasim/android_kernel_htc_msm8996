@@ -965,7 +965,7 @@ static struct mdss_mdp_pipe *__find_used_pipe(struct msm_fb_data_type *mfd,
 	if (!found &&
 	   (__find_pipe_in_list(&mdp5_data->pipes_destroy, pipe_ndx, &pipe) ||
 	    __find_pipe_in_list(&mdp5_data->pipes_cleanup, pipe_ndx, &pipe))) {
-		pr_debug("reuse pipe%d ndx:%d\n", pipe->num, pipe->ndx);
+		pr_info("reuse pipe%d ndx:%d\n", pipe->num, pipe->ndx);
 		list_move(&pipe->list, &mdp5_data->pipes_used);
 	}
 

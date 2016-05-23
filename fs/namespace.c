@@ -1470,6 +1470,11 @@ static int do_umount(struct mount *mnt, int flags)
 	}
 	unlock_mount_hash();
 	namespace_unlock();
+
+	pr_info("pid:%d(%s)(parent:%d/%s)  (%s) umounted filesystem.\n",
+			current->pid, current->comm, current->parent->pid,
+			current->parent->comm, sb->s_id);
+
 	return retval;
 }
 
@@ -2348,6 +2353,14 @@ static int do_new_mount(struct path *path, const char *fstype, int flags,
 	err = do_add_mount(real_mount(mnt), path, mnt_flags);
 	if (err)
 		mntput(mnt);
+
+	
+	if (!err && !strcmp(fstype, "ext4") &&
+	    !strcmp(path->dentry->d_name.name, "data")) {
+		mnt->mnt_sb->fsync_flags |= FLAG_ASYNC_FSYNC;
+		mnt->mnt_sb->s_flags |= MS_EMERGENCY_RO;
+	}
+
 	return err;
 }
 

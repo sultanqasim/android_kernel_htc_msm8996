@@ -23,6 +23,8 @@
 #include <linux/delay.h>
 #include <linux/leds-qpnp-wled.h>
 
+#include <linux/htc_flashlight.h>
+
 #define QPNP_IRQ_FLAGS	(IRQF_TRIGGER_RISING | \
 			IRQF_TRIGGER_FALLING | \
 			IRQF_ONESHOT)
@@ -304,6 +306,12 @@ struct qpnp_wled {
 	bool disp_type_amoled;
 	bool en_ext_pfet_sc_pro;
 	bool prev_state;
+
+	
+	struct delayed_work flash_work;
+	bool flash_enabled;
+	u16 fs_curr_ua_flash;
+	struct htc_flashlight_dev flash_dev;
 };
 
 /* helper to read a pmic register */
@@ -355,7 +363,10 @@ static int qpnp_wled_set_level(struct qpnp_wled *wled, int level)
 	int i, rc;
 	u8 reg;
 
-	/* set brightness registers */
+	if (wled->flash_enabled)
+		return -EBUSY;
+
+	
 	for (i = 0; i < wled->num_strings; i++) {
 		reg = level & QPNP_WLED_BRIGHT_LSB_MASK;
 		rc = qpnp_wled_write_reg(wled, &reg,
@@ -432,7 +443,131 @@ static int qpnp_wled_module_en(struct qpnp_wled *wled,
 	return 0;
 }
 
-/* sysfs store function for ramp */
+static int qpnp_wled_flash_en_locked(struct qpnp_wled *wled, int en, int duration)
+{
+	int i, rc = 0;
+	u8 reg;
+	int fs, level, cabc;
+
+	if (en) {
+		if (wled->flash_enabled) {
+			pr_info("%s: already enabled\n", __func__);
+			rc = -EBUSY;
+			goto exit;
+		}
+
+		if (wled->fs_curr_ua_flash > 0 && wled->fs_curr_ua_flash <= QPNP_WLED_FS_CURR_MAX_UA)
+			fs = wled->fs_curr_ua_flash;
+		else
+			fs = QPNP_WLED_FS_CURR_MAX_UA;
+		level = WLED_MAX_LEVEL_4095;
+		cabc = false;
+
+		if (duration < 10)
+			duration = 10;
+		schedule_delayed_work(&wled->flash_work, msecs_to_jiffies(duration));
+	} else {
+		fs = wled->fs_curr_ua;
+		level = wled->cdev.brightness;
+		cabc = wled->en_cabc;
+	}
+	pr_info("%s: (%d, %d) [fs=%d, level=%d], %d strings\n",
+		__func__, en, duration, fs, level, wled->num_strings);
+
+	
+	for (i = 0; i < wled->num_strings; i++) {
+#if 0
+		reg = (cabc << QPNP_WLED_CABC_SHIFT);
+		rc = qpnp_wled_write_reg(wled, &reg,
+				QPNP_WLED_CABC_REG(wled->sink_base, i));
+		if (rc)
+			goto exit;
+#endif
+		reg = (fs / QPNP_WLED_FS_CURR_STEP_UA) & 0x0f;
+		rc = qpnp_wled_write_reg(wled, &reg,
+				QPNP_WLED_FS_CURR_REG(wled->sink_base, i));
+		if (rc)
+			goto exit;
+
+		reg = level & QPNP_WLED_BRIGHT_LSB_MASK;
+		rc = qpnp_wled_write_reg(wled, &reg,
+			QPNP_WLED_BRIGHT_LSB_REG(wled->sink_base, i));
+		if (rc < 0)
+			goto exit;
+
+		reg = level >> QPNP_WLED_BRIGHT_MSB_SHIFT;
+		reg = reg & QPNP_WLED_BRIGHT_MSB_MASK;
+		rc = qpnp_wled_write_reg(wled, &reg,
+			QPNP_WLED_BRIGHT_MSB_REG(wled->sink_base, i));
+		if (rc < 0)
+			goto exit;
+	}
+
+	
+	reg = QPNP_WLED_SYNC;
+	rc = qpnp_wled_write_reg(wled, &reg, QPNP_WLED_SYNC_REG(wled->sink_base));
+	if (rc < 0)
+		goto exit;
+
+	if (wled->cons_sync_write_delay_us)
+		usleep_range(wled->cons_sync_write_delay_us,
+				wled->cons_sync_write_delay_us + 1);
+
+	reg = QPNP_WLED_SYNC_RESET;
+	rc = qpnp_wled_write_reg(wled, &reg, QPNP_WLED_SYNC_REG(wled->sink_base));
+	if (rc < 0)
+		goto exit;
+
+	wled->flash_enabled = en;
+exit:
+	pr_info("%s: (%d, %d) done, rc=%d\n", __func__, en, duration, rc);
+
+	return rc;
+}
+
+static int qpnp_wled_flash_en(struct qpnp_wled *wled, int en, int duration)
+{
+	int rc = 0;
+
+	if (!en) {
+		cancel_delayed_work_sync(&wled->flash_work);
+	}
+
+	mutex_lock(&wled->lock);
+	rc = qpnp_wled_flash_en_locked(wled, en, duration);
+	mutex_unlock(&wled->lock);
+
+	return rc;
+}
+
+static void qpnp_wled_flash_off_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct qpnp_wled *wled = container_of(dwork, struct qpnp_wled, flash_work);
+
+	mutex_lock(&wled->lock);
+	qpnp_wled_flash_en_locked(wled, 0, 0);
+	mutex_unlock(&wled->lock);
+}
+
+static int qpnp_wled_flash_mode(struct htc_flashlight_dev *fl_dev, int mode1, int mode2)
+{
+	const int max_flash_ms = 500;
+	struct qpnp_wled *wled = container_of(fl_dev, struct qpnp_wled, flash_dev);
+
+	wled->fs_curr_ua_flash = QPNP_WLED_FS_CURR_MAX_UA;
+	return qpnp_wled_flash_en(wled, mode1, max_flash_ms);
+}
+
+static int qpnp_wled_torch_mode(struct htc_flashlight_dev *fl_dev, int mode1, int mode2)
+{
+	const int max_torch_ms = 10000;
+	struct qpnp_wled *wled = container_of(fl_dev, struct qpnp_wled, flash_dev);
+
+	wled->fs_curr_ua_flash = wled->fs_curr_ua;
+	return qpnp_wled_flash_en(wled, mode1, max_torch_ms);
+}
+
 static ssize_t qpnp_wled_ramp_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -732,7 +867,31 @@ static ssize_t qpnp_wled_fs_curr_ua_store(struct device *dev,
 	return count;
 }
 
-/* sysfs attributes exported by wled */
+static ssize_t qpnp_wled_flash_en_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct qpnp_wled *wled = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", wled->flash_enabled);
+}
+
+static ssize_t qpnp_wled_flash_en_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct qpnp_wled *wled = dev_get_drvdata(dev);
+	int data = 0, curr = 0, rc = 0;
+
+	if (sscanf(buf, "%d %d", &data, &curr) < 1)
+		return -EINVAL;
+	wled->fs_curr_ua_flash = curr;
+
+	rc = qpnp_wled_flash_en(wled, !!data, data);
+	if (rc)
+		return rc;
+
+	return count;
+}
+
 static struct device_attribute qpnp_wled_attrs[] = {
 	__ATTR(dump_regs, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_wled_dump_regs_show,
@@ -752,6 +911,11 @@ static struct device_attribute qpnp_wled_attrs[] = {
 	__ATTR(ramp_step, (S_IRUGO | S_IWUSR | S_IWGRP),
 			qpnp_wled_ramp_step_show,
 			qpnp_wled_ramp_step_store),
+
+	
+	__ATTR(flash_en, (S_IRUGO | S_IWUSR | S_IWGRP),
+			qpnp_wled_flash_en_show,
+			qpnp_wled_flash_en_store),
 };
 
 /* worker for setting wled brightness */
@@ -1659,6 +1823,8 @@ static int qpnp_wled_probe(struct spmi_device *spmi)
 
 	wled->cdev.max_brightness = WLED_MAX_LEVEL_4095;
 
+	INIT_DELAYED_WORK(&wled->flash_work, qpnp_wled_flash_off_work);
+
 	rc = led_classdev_register(&spmi->dev, &wled->cdev);
 	if (rc) {
 		dev_err(&spmi->dev, "wled registration failed(%d)\n", rc);
@@ -1672,6 +1838,15 @@ static int qpnp_wled_probe(struct spmi_device *spmi)
 			dev_err(&spmi->dev, "sysfs creation failed\n");
 			goto sysfs_fail;
 		}
+	}
+
+	wled->flash_dev.id = 1;
+	wled->flash_dev.flash_func = qpnp_wled_flash_mode;
+	wled->flash_dev.torch_func = qpnp_wled_torch_mode;
+
+	if (register_htc_flashlight(&wled->flash_dev)) {
+		pr_err("%s: register htc_flashlight failed!\n", __func__);
+		wled->flash_dev.id = -1;
 	}
 
 	return 0;
@@ -1695,6 +1870,11 @@ static int qpnp_wled_remove(struct spmi_device *spmi)
 	for (i = 0; i < ARRAY_SIZE(qpnp_wled_attrs); i++)
 		sysfs_remove_file(&wled->cdev.dev->kobj,
 				&qpnp_wled_attrs[i].attr);
+
+	if (wled->flash_dev.id >= 0) {
+		unregister_htc_flashlight(&wled->flash_dev);
+		wled->flash_dev.id = -1;
+	}
 
 	led_classdev_unregister(&wled->cdev);
 	cancel_work_sync(&wled->work);

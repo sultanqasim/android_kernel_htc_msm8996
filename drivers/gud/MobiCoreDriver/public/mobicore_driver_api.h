@@ -14,7 +14,7 @@
 #ifndef _MOBICORE_DRIVER_API_H_
 #define _MOBICORE_DRIVER_API_H_
 
-#include "mc_linux.h"
+#include "mc_user.h"
 
 #define __MC_CLIENT_LIB_API
 
@@ -114,8 +114,8 @@ enum mc_result {
  * MobiCore environment.
  */
 struct mc_session_handle {
-	uint32_t session_id;		/* MobiCore session ID */
-	uint32_t device_id;		/* Device ID the session belongs to */
+	u32	session_id;		
+	u32	device_id;		
 };
 
 /*
@@ -126,57 +126,22 @@ struct mc_session_handle {
  * inform the Trustlet with the content of this structure via the TCI.
  */
 struct mc_bulk_map {
-	/* The virtual address of the Bulk buffer regarding the address space
-	 * of the Trustlet, already includes a possible offset! */
-	uint32_t secure_virt_addr;
-	uint32_t secure_virt_len;	/* Length of the mapped Bulk buffer */
+	u32	secure_virt_addr;
+	u32	secure_virt_len;	
 };
 
 /* The default device ID */
 #define MC_DEVICE_ID_DEFAULT	0
-/* Wait infinite for a response of the MC. */
-#define MC_INFINITE_TIMEOUT	((int32_t)(-1))
-/* Do not wait for a response of the MC. */
+#define MC_INFINITE_TIMEOUT	((s32)(-1))
 #define MC_NO_TIMEOUT		0
 /* TCI/DCI must not exceed 1MiB */
 #define MC_MAX_TCI_LEN		0x100000
 
-/**
- * mc_open_device() - Open a new connection to a MobiCore device.
- * @device_id:		Identifier for the MobiCore device to be used.
- *			MC_DEVICE_ID_DEFAULT refers to the default device.
- *
- * Initializes all device specific resources required to communicate with a
- * MobiCore instance located on the specified device in the system. If the
- * device does not exist the function will return MC_DRV_ERR_UNKNOWN_DEVICE.
- *
- * Return codes:
- *	MC_DRV_OK:			operation completed successfully
- *	MC_DRV_ERR_INVALID_OPERATION:	device already opened
- *	MC_DRV_ERR_DAEMON_UNREACHABLE:	problems with daemon
- *	MC_DRV_ERR_UNKNOWN_DEVICE:	device_id unknown
- *	MC_DRV_ERR_INVALID_DEVICE_FILE:	kernel module under /dev/mobicore
- *					cannot be opened
- */
-__MC_CLIENT_LIB_API enum mc_result mc_open_device(uint32_t device_id);
+__MC_CLIENT_LIB_API enum mc_result mc_open_device(
+	u32				device_id);
 
-/**
- * mc_close_device() - Close the connection to a MobiCore device.
- * @device_id:		Identifier for the MobiCore device.
- *
- * When closing a device, active sessions have to be closed beforehand.
- * Resources associated with the device will be released.
- * The device may be opened again after it has been closed.
- *
- * MC_DEVICE_ID_DEFAULT refers to the default device.
- *
- * Return codes:
- *	MC_DRV_OK:			operation completed successfully
- *	MC_DRV_ERR_UNKNOWN_DEVICE:	device id is invalid
- *	MC_DRV_ERR_SESSION_PENDING:	a session is still open
- *	MC_DRV_ERR_DAEMON_UNREACHABLE:	problems with daemon occur
- */
-__MC_CLIENT_LIB_API enum mc_result mc_close_device(uint32_t device_id);
+__MC_CLIENT_LIB_API enum mc_result mc_close_device(
+	u32				device_id);
 
 /**
  * mc_open_session() - Open a new session to a Trustlet.
@@ -204,8 +169,10 @@ __MC_CLIENT_LIB_API enum mc_result mc_close_device(uint32_t device_id);
  *	MC_DRV_ERR_NQ_FAILED:		daemon returns an error
  */
 __MC_CLIENT_LIB_API enum mc_result mc_open_session(
-	struct mc_session_handle *session, const struct mc_uuid_t *uuid,
-	uint8_t *tci, uint32_t tci_len);
+	struct mc_session_handle	*session,
+	const struct mc_uuid_t		*uuid,
+	u8				*tci,
+	u32				tci_len);
 
 /**
  * mc_open_trustlet() - Open a new session to the provided Trustlet.
@@ -233,8 +200,12 @@ __MC_CLIENT_LIB_API enum mc_result mc_open_session(
  *	MC_DRV_ERR_NQ_FAILED:		daemon returns an error
  */
 __MC_CLIENT_LIB_API enum mc_result mc_open_trustlet(
-	struct mc_session_handle *session, uint32_t spid,
-	uint8_t *trustlet, uint32_t trustlet_len, uint8_t *tci, uint32_t len);
+	struct mc_session_handle	*session,
+	u32				spid,
+	u8				*trustlet,
+	u32				trustlet_len,
+	u8				*tci,
+	u32				len);
 
 /**
  * mc_close_session() - Close a Trustlet session.
@@ -254,25 +225,10 @@ __MC_CLIENT_LIB_API enum mc_result mc_open_trustlet(
  *	MC_DRV_ERR_INVALID_DEVICE_FILE:	daemon cannot open Trustlet file
  */
 __MC_CLIENT_LIB_API enum mc_result mc_close_session(
-	struct mc_session_handle *session);
+	struct mc_session_handle	*session);
 
-/**
- * mc_notify() - Notify a session.
- * @session:		The session to be notified.
- *
- * Notifies the session end point about available message data.
- * If the session parameter is correct, notify will always succeed.
- * Corresponding errors can only be received by mc_wait_notification().
- *
- * A session has to be opened in advance.
- *
- * Return codes:
- *	MC_DRV_OK:			operation completed successfully
- *	MC_DRV_INVALID_PARAMETER:	session parameter is invalid
- *	MC_DRV_ERR_UNKNOWN_SESSION:	session id is invalid
- *	MC_DRV_ERR_UNKNOWN_DEVICE:	device id of session is invalid
- */
-__MC_CLIENT_LIB_API enum mc_result mc_notify(struct mc_session_handle *session);
+__MC_CLIENT_LIB_API enum mc_result mc_notify(
+	struct mc_session_handle	*session);
 
 /**
  * mc_wait_notification() - Wait for a notification.
@@ -306,7 +262,8 @@ __MC_CLIENT_LIB_API enum mc_result mc_notify(struct mc_session_handle *session);
  *	MC_DRV_ERR_UNKNOWN_DEVICE:	device id of session is invalid
  */
 __MC_CLIENT_LIB_API enum mc_result mc_wait_notification(
-	struct mc_session_handle *session, int32_t timeout);
+	struct mc_session_handle	*session,
+	s32				timeout);
 
 /**
  * mc_malloc_wsm() - Allocate a block of world shared memory (WSM).
@@ -336,30 +293,15 @@ __MC_CLIENT_LIB_API enum mc_result mc_wait_notification(
  *					process
  */
 __MC_CLIENT_LIB_API enum mc_result mc_malloc_wsm(
-	uint32_t  device_id,
-	uint32_t  align,
-	uint32_t  len,
-	uint8_t   **wsm,
-	uint32_t  wsm_flags
-);
+	u32				device_id,
+	u32				align,
+	u32				len,
+	u8				**wsm,
+	u32				wsm_flags);
 
-/**
- * mc_free_wsm() - Free a block of world shared memory (WSM).
- * @device_id:		The ID to which the given address belongs
- * @wsm:		Address of WSM block to be freed
- *
- * The MC driver will free a block of world shared memory (WSM) previously
- * allocated with mc_malloc_wsm(). The caller has to assure that the address
- * handed over to the driver is a valid WSM address.
- *
- * Return codes:
- *	MC_DRV_OK:			operation completed successfully
- *	MC_DRV_INVALID_PARAMETER:	a parameter is invalid
- *	MC_DRV_ERR_UNKNOWN_DEVICE:	when device id is invalid
- *	MC_DRV_ERR_FREE_MEMORY_FAILED:	on failure
- */
-__MC_CLIENT_LIB_API enum mc_result mc_free_wsm(uint32_t device_id,
-					       uint8_t *wsm);
+__MC_CLIENT_LIB_API enum mc_result mc_free_wsm(
+	u32				device_id,
+	u8				*wsm);
 
 /**
  *mc_map() -	Map additional bulk buffer between a Trustlet Connector (TLC)
@@ -392,8 +334,10 @@ __MC_CLIENT_LIB_API enum mc_result mc_free_wsm(uint32_t device_id,
  *					when registering the buffer failed
  */
 __MC_CLIENT_LIB_API enum mc_result mc_map(
-	struct mc_session_handle *session, void	*buf, uint32_t len,
-	struct mc_bulk_map *map_info);
+	struct mc_session_handle	*session,
+	void				*buf,
+	u32				len,
+	struct mc_bulk_map		*map_info);
 
 /**
  * mc_unmap() -	Remove additional mapped bulk buffer between Trustlet Connector
@@ -423,8 +367,9 @@ __MC_CLIENT_LIB_API enum mc_result mc_map(
  *					or when unregistering failed
  */
 __MC_CLIENT_LIB_API enum mc_result mc_unmap(
-	struct mc_session_handle *session, void *buf,
-	struct mc_bulk_map *map_info);
+	struct mc_session_handle	*session,
+	void				*buf,
+	struct mc_bulk_map		*map_info);
 
 /*
  * mc_get_session_error_code() - Get additional error information of the last
@@ -445,6 +390,7 @@ __MC_CLIENT_LIB_API enum mc_result mc_unmap(
  *	MC_DRV_ERR_UNKNOWN_DEVICE:	device id of session is invalid
  */
 __MC_CLIENT_LIB_API enum mc_result mc_get_session_error_code(
-	struct mc_session_handle *session, int32_t *exit_code);
+	struct mc_session_handle	*session,
+	s32				*exit_code);
 
 #endif /* _MOBICORE_DRIVER_API_H_ */

@@ -1616,8 +1616,8 @@ static int userial_init(void)
 		return -ENOMEM;
 
 	gs_tty_driver->driver_name = "g_serial";
-	gs_tty_driver->name = "ttyGS";
-	/* uses dynamically assigned dev_t values */
+	gs_tty_driver->name = "ttyHSUSB"; 
+	
 
 	gs_tty_driver->type = TTY_DRIVER_TYPE_SERIAL;
 	gs_tty_driver->subtype = SERIAL_TYPE_NORMAL;
@@ -1633,6 +1633,10 @@ static int userial_init(void)
 			B9600 | CS8 | CREAD | HUPCL | CLOCAL;
 	gs_tty_driver->init_termios.c_ispeed = 9600;
 	gs_tty_driver->init_termios.c_ospeed = 9600;
+
+	gs_tty_driver->init_termios.c_lflag = 0;
+	gs_tty_driver->init_termios.c_iflag = 0;
+	gs_tty_driver->init_termios.c_oflag = 0;
 
 	tty_set_operations(gs_tty_driver, &gs_tty_ops);
 	for (i = 0; i < MAX_U_SERIAL_PORTS; i++)

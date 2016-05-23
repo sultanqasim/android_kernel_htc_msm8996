@@ -30,23 +30,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
 
-/*
-   - No shared variables, all the data are CPU local.
-   - If a softirq needs serialization, let it serialize itself
-     by its own spinlocks.
-   - Even if softirq is serialized, only local cpu is marked for
-     execution. Hence, we get something sort of weak cpu binding.
-     Though it is still not clear, will it result in better locality
-     or will not.
-
-   Examples:
-   - NET RX softirq. It is multithreaded and does not require
-     any global serialization.
-   - NET TX softirq. It kicks software netdevice queues, hence
-     it is logically serialized per device, but this serialization
-     is invisible to common code.
-   - Tasklets: serialized wrt itself.
- */
+#if defined(CONFIG_HTC_DEBUG_RTB)
+#include <linux/msm_rtb.h>
+#endif
 
 #ifndef __ARCH_IRQ_STAT
 irq_cpustat_t irq_stat[NR_CPUS] ____cacheline_aligned;
@@ -266,6 +252,9 @@ restart:
 		kstat_incr_softirqs_this_cpu(vec_nr);
 
 		trace_softirq_entry(vec_nr);
+#if defined(CONFIG_HTC_DEBUG_RTB)
+		uncached_logk(LOGK_SOFTIRQ, (void *)(h->action));
+#endif
 		h->action(h);
 		trace_softirq_exit(vec_nr);
 		if (unlikely(prev_count != preempt_count())) {

@@ -16,18 +16,12 @@
 
 #include <linux/slimbus/slimbus.h>
 
-/*
- * struct msm_slim_dma_data - DMA data for slimbus data transfer
- *
- * @sdev: Handle to the slim_device instance associated with the
- *	  data transfer.
- * @ph:	Port handle for the slimbus ports.
- * @dai_channel_ctl: callback function into the CPU dai driver
- *		     to setup the data path.
- *
- * This structure is used to share the slimbus port handles and
- * other data path setup related handles with other drivers.
- */
+enum msm_dai_slim_event {
+	MSM_DAI_SLIM_ENABLE = 1,
+	MSM_DAI_SLIM_PRE_DISABLE,
+	MSM_DAI_SLIM_DISABLE,
+};
+
 struct msm_slim_dma_data {
 
 	/* Handle to slimbus device */
@@ -38,7 +32,8 @@ struct msm_slim_dma_data {
 
 	/* Callback for data channel control */
 	int (*dai_channel_ctl) (struct msm_slim_dma_data *dma_data,
-				struct snd_soc_dai *dai, bool enable);
+				struct snd_soc_dai *dai,
+				enum msm_dai_slim_event);
 };
 
 #endif

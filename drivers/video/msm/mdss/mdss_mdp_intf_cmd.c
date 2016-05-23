@@ -76,6 +76,8 @@ struct mdss_mdp_cmd_ctx {
 	struct mdss_mdp_cmd_ctx *sync_ctx; /* for partial update */
 	u32 pp_timeout_report_cnt;
 	bool pingpong_split_slave;
+
+	u32 check_tepin;
 };
 
 struct mdss_mdp_cmd_ctx mdss_mdp_cmd_ctx_list[MAX_SESSIONS];
@@ -512,7 +514,7 @@ int mdss_mdp_resource_control(struct mdss_mdp_ctl *ctl, u32 sw_event)
 	mdss_mdp_get_split_display_ctls(&ctl, &sctl);
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
-	if (!ctx) {
+	if (!ctx || !ctx->ctl ) {
 		pr_err("%s invalid ctx\n", __func__);
 		rc = -EINVAL;
 		goto exit;
@@ -674,24 +676,16 @@ int mdss_mdp_resource_control(struct mdss_mdp_ctl *ctl, u32 sw_event)
 		break;
 	case MDP_RSRC_CTL_EVENT_STOP:
 
-		/* If we are already OFF, just return */
-		if (mdp5_data->resources_state ==
-				MDP_RSRC_CTL_STATE_OFF) {
-			pr_debug("resources already off\n");
-			goto exit;
-		}
-
-		/* If pp_done is on-going, wait for it to finish */
+		
 		mdss_mdp_cmd_wait4pingpong(ctl, NULL);
 
 		if (sctl)
 			mdss_mdp_cmd_wait4pingpong(sctl, NULL);
 
-		/*
-		 * If a pp_done happened just before the stop,
-		 * we can still have some work items running;
-		 * cancel any pending works.
-		 */
+		
+		if (cancel_work_sync(&ctx->early_wakeup_clk_work))
+			pr_debug("early wakeup work canceled\n");
+
 
 		/* Cancel GATE Work Item */
 		if (cancel_work_sync(&ctx->gate_clk_work)) {
@@ -713,10 +707,6 @@ int mdss_mdp_resource_control(struct mdss_mdp_ctl *ctl, u32 sw_event)
 				pr_debug("%s unexpected OFF state\n",
 					__func__);
 		}
-
-		/* Cancel early wakeup Work Item */
-		if (cancel_work_sync(&ctx->early_wakeup_clk_work))
-			pr_debug("early wakeup work canceled\n");
 
 		mutex_lock(&ctl->rsrc_lock);
 		MDSS_XLOG(ctl->num, mdp5_data->resources_state, sw_event, 0x33);
@@ -902,6 +892,8 @@ static void mdss_mdp_cmd_readptr_done(void *arg)
 	struct mdss_mdp_cmd_ctx *ctx = ctl->intf_ctx[MASTER_CTX];
 	struct mdss_mdp_vsync_handler *tmp;
 	ktime_t vsync_time;
+	u32 status;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	if (!ctx) {
 		pr_err("invalid ctx\n");
@@ -918,7 +910,8 @@ static void mdss_mdp_cmd_readptr_done(void *arg)
 
 	vsync_time = ktime_get();
 	ctl->vsync_cnt++;
-	MDSS_XLOG(ctl->num, atomic_read(&ctx->koff_cnt));
+	status = readl_relaxed(mdata->mdp_base + MDSS_REG_HW_INTR2_STATUS);
+	MDSS_XLOG(ctl->num, atomic_read(&ctx->koff_cnt), status);
 
 	spin_lock(&ctx->clk_lock);
 	list_for_each_entry(tmp, &ctx->vsync_handlers, list) {
@@ -980,6 +973,7 @@ static void mdss_mdp_cmd_pingpong_done(void *arg)
 	struct mdss_mdp_cmd_ctx *ctx = ctl->intf_ctx[MASTER_CTX];
 	struct mdss_mdp_vsync_handler *tmp;
 	ktime_t vsync_time;
+	bool sync_ppdone;
 
 	if (!ctx) {
 		pr_err("%s: invalid ctx\n", __func__);
@@ -1005,11 +999,13 @@ static void mdss_mdp_cmd_pingpong_done(void *arg)
 
 	MDSS_XLOG(ctl->num, atomic_read(&ctx->koff_cnt), ctx->current_pp_num);
 
+	sync_ppdone = mdss_mdp_cmd_do_notifier(ctx);
+
 	if (atomic_add_unless(&ctx->koff_cnt, -1, 0)) {
 		if (atomic_read(&ctx->koff_cnt))
 			pr_err("%s: too many kickoffs=%d!\n", __func__,
 			       atomic_read(&ctx->koff_cnt));
-		if (mdss_mdp_cmd_do_notifier(ctx)) {
+		if (sync_ppdone) {
 			atomic_inc(&ctx->pp_done_cnt);
 			schedule_work(&ctx->pp_done_work);
 
@@ -1455,6 +1451,8 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_panel_data *pdata;
 	unsigned long flags;
 	int rc = 0;
+	u32 status;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -1502,10 +1500,14 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 				__func__,
 				ctl->num, rc, ctx->pp_timeout_report_cnt);
 		if (ctx->pp_timeout_report_cnt == 0) {
+			status = readl_relaxed(mdata->mdp_base +
+				MDSS_REG_HW_INTR2_STATUS);
+			pr_err("TE ISR status 0x%x\n", status);
+
 			MDSS_XLOG(0xbad);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
 				"dsi1_ctrl", "dsi1_phy", "vbif", "vbif_nrt",
-				"dbg_bus", "vbif_dbg_bus", "panic");
+				"dbg_bus", "vbif_dbg_bus");
 		} else if (ctx->pp_timeout_report_cnt == MAX_RECOVERY_TRIALS) {
 			MDSS_XLOG(0xbad2);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl", "dsi0_phy",
@@ -1623,6 +1625,7 @@ static int mdss_mdp_cmd_panel_on(struct mdss_mdp_ctl *ctl,
 {
 	struct mdss_mdp_cmd_ctx *ctx, *sctx = NULL;
 	int rc = 0;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	ctx = (struct mdss_mdp_cmd_ctx *) ctl->intf_ctx[MASTER_CTX];
 	if (!ctx) {
@@ -1669,6 +1672,10 @@ static int mdss_mdp_cmd_panel_on(struct mdss_mdp_ctl *ctl,
 			CTL_INTF_EVENT_FLAG_DEFAULT);
 
 		ctx->intf_stopped = 0;
+		ctx->check_tepin = 5;
+		pr_info("%s: INTR2 Status = 0x%x, %d\n", __func__,
+			readl_relaxed(mdata->mdp_base + MDSS_REG_HW_INTR2_STATUS),
+			ctx->check_tepin);
 	} else {
 		pr_err("%s: Panel already on\n", __func__);
 	}
@@ -1867,6 +1874,12 @@ static int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 
 	mdss_mdp_cmd_set_sync_ctx(ctl, sctl);
 
+	if (ctx->check_tepin > 0) {
+		ctx->check_tepin--;
+		pr_info("%s: INTR2 Status = 0x%x, %d\n", __func__,
+			readl_relaxed(mdata->mdp_base + MDSS_REG_HW_INTR2_STATUS),
+			ctx->check_tepin);
+	}
 	if (ctx->autorefresh_init || ctx->autorefresh_off_pending) {
 		/*
 		 * If autorefresh is enabled then do not queue the frame till
@@ -1896,6 +1909,9 @@ static int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 		mdss_mdp_ctl_perf_set_transaction_status(sctl,
 			PERF_SW_COMMIT_STATE, PERF_STATUS_DONE);
 	}
+
+	writel_relaxed(0xffffffff, ctl->mdata->mdp_base + MDSS_REG_HW_INTR2_CLEAR);
+	wmb();
 
 	if (!ctx->autorefresh_pending_frame_cnt && !ctl->cmd_autorefresh_en) {
 		/* Kickoff */

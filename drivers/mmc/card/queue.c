@@ -32,9 +32,9 @@
  */
 #define DEFAULT_NUM_REQS_TO_START_PACK 17
 
-/*
- * Prepare a MMC request. This just filters out odd stuff.
- */
+struct scatterlist	*cur_sg = NULL;
+struct scatterlist	*prev_sg = NULL;
+
 static int mmc_prep_request(struct request_queue *q, struct request *req)
 {
 	struct mmc_queue *mq = q->queuedata;
@@ -84,17 +84,8 @@ static inline void mmc_cmdq_ready_wait(struct mmc_host *host,
 	struct mmc_cmdq_context_info *ctx = &host->cmdq_ctx;
 	struct request_queue *q = mq->queue;
 
-	/*
-	 * Wait until all of the following conditions are true:
-	 * 1. There is a request pending in the block layer queue
-	 *    to be processed.
-	 * 2. If the peeked request is flush/discard then there shouldn't
-	 *    be any other direct command active.
-	 * 3. cmdq state should be unhalted.
-	 * 4. cmdq state shouldn't be in error state.
-	 * 5. free tag available to process the new request.
-	 */
-	wait_event(ctx->wait, mmc_peek_request(mq) &&
+	wait_event(ctx->wait, kthread_should_stop()
+		|| (mmc_peek_request(mq) &&
 		!((mq->cmdq_req_peeked->cmd_flags & (REQ_FLUSH | REQ_DISCARD))
 		  && test_bit(CMDQ_STATE_DCMD_ACTIVE, &ctx->curr_state))
 		&& !(!host->card->part_curr && !mmc_card_suspended(host->card)
@@ -102,7 +93,7 @@ static inline void mmc_cmdq_ready_wait(struct mmc_host *host,
 		&& !(!host->card->part_curr && mmc_host_cq_disable(host) &&
 			!mmc_card_suspended(host->card))
 		&& !test_bit(CMDQ_STATE_ERR, &ctx->curr_state)
-		&& !mmc_check_blk_queue_start_tag(q, mq->cmdq_req_peeked));
+		&& !mmc_check_blk_queue_start_tag(q, mq->cmdq_req_peeked)));
 }
 
 static int mmc_cmdq_thread(void *d)
@@ -119,6 +110,8 @@ static int mmc_cmdq_thread(void *d)
 		int ret = 0;
 
 		mmc_cmdq_ready_wait(host, mq);
+		if (kthread_should_stop())
+			break;
 
 		ret = mq->cmdq_issue_fn(mq, mq->cmdq_req_peeked);
 		/*
@@ -241,7 +234,7 @@ static void mmc_request_fn(struct request_queue *q)
 		wake_up_process(mq->thread);
 }
 
-static struct scatterlist *mmc_alloc_sg(int sg_len, int *err)
+struct scatterlist *mmc_alloc_sg(int sg_len, int *err)
 {
 	struct scatterlist *sg;
 
@@ -255,6 +248,7 @@ static struct scatterlist *mmc_alloc_sg(int sg_len, int *err)
 
 	return sg;
 }
+EXPORT_SYMBOL(mmc_alloc_sg);
 
 static void mmc_queue_setup_discard(struct request_queue *q,
 				    struct mmc_card *card)
@@ -435,17 +429,40 @@ int mmc_init_queue(struct mmc_queue *mq, struct mmc_card *card,
 retry:
 		blk_queue_max_segments(mq->queue, host->max_segs);
 
-		mqrq_cur->sg = mmc_alloc_sg(host->max_segs, &ret);
-		if (ret == -ENOMEM)
-			goto cur_sg_alloc_failed;
-		else if (ret)
-			goto cleanup_queue;
+		if (mmc_card_sd(card)) {
+			if (!cur_sg) {
+				cur_sg = mmc_alloc_sg(host->max_segs, &ret);
+				mqrq_cur->sg = cur_sg;
+				if (ret == -ENOMEM)
+					goto cur_sg_alloc_failed;
+				else if (ret)
+					goto cleanup_queue;
+			} else {
+				mqrq_cur->sg = cur_sg;
+			}
+			if (!prev_sg) {
+				prev_sg = mmc_alloc_sg(host->max_segs, &ret);
+				mqrq_prev->sg = prev_sg;
+				if (ret == -ENOMEM)
+					goto prev_sg_alloc_failed;
+				else if (ret)
+					goto cleanup_queue;
+			} else {
+				mqrq_prev->sg = prev_sg;
+			}
+		} else {
+			mqrq_cur->sg = mmc_alloc_sg(host->max_segs, &ret);
+			if (ret == -ENOMEM)
+				goto cur_sg_alloc_failed;
+			else if (ret)
+				goto cleanup_queue;
 
-		mqrq_prev->sg = mmc_alloc_sg(host->max_segs, &ret);
-		if (ret == -ENOMEM)
-			goto prev_sg_alloc_failed;
-		else if (ret)
-			goto cleanup_queue;
+			mqrq_prev->sg = mmc_alloc_sg(host->max_segs, &ret);
+			if (ret == -ENOMEM)
+				goto prev_sg_alloc_failed;
+			else if (ret)
+				goto cleanup_queue;
+		}
 
 		goto success;
 
@@ -469,8 +486,11 @@ success:
 	if (card->host->ops->init)
 		card->host->ops->init(card->host);
 
-	mq->thread = kthread_run(mmc_queue_thread, mq, "mmcqd/%d%s",
-		host->index, subname ? subname : "");
+	if (mmc_card_sd(card))
+		mq->thread = kthread_run(mmc_queue_thread, mq, "sd-qd");
+	else
+		mq->thread = kthread_run(mmc_queue_thread, mq, "mmcqd/%d%s",
+				host->index, subname ? subname : "");
 
 	if (IS_ERR(mq->thread)) {
 		ret = PTR_ERR(mq->thread);
@@ -479,20 +499,26 @@ success:
 
 	return 0;
  free_bounce_sg:
-	kfree(mqrq_cur->bounce_sg);
+	if (mqrq_cur->bounce_sg)
+		kfree(mqrq_cur->bounce_sg);
 	mqrq_cur->bounce_sg = NULL;
-	kfree(mqrq_prev->bounce_sg);
+	if (mqrq_prev->bounce_sg)
+		kfree(mqrq_prev->bounce_sg);
 	mqrq_prev->bounce_sg = NULL;
 
  cleanup_queue:
-	kfree(mqrq_cur->sg);
+	if (mqrq_cur->sg)
+		kfree(mqrq_cur->sg);
 	mqrq_cur->sg = NULL;
-	kfree(mqrq_cur->bounce_buf);
+	if (mqrq_cur->bounce_buf)
+		kfree(mqrq_cur->bounce_buf);
 	mqrq_cur->bounce_buf = NULL;
 
-	kfree(mqrq_prev->sg);
+	if (mqrq_prev->sg)
+		kfree(mqrq_prev->sg);
 	mqrq_prev->sg = NULL;
-	kfree(mqrq_prev->bounce_buf);
+	if (mqrq_prev->bounce_buf)
+		kfree(mqrq_prev->bounce_buf);
 	mqrq_prev->bounce_buf = NULL;
 
 	blk_cleanup_queue(mq->queue);
@@ -518,24 +544,25 @@ void mmc_cleanup_queue(struct mmc_queue *mq)
 	blk_start_queue(q);
 	spin_unlock_irqrestore(q->queue_lock, flags);
 
-	kfree(mqrq_cur->bounce_sg);
-	mqrq_cur->bounce_sg = NULL;
+	if (!mmc_card_sd(mq->card)) {
+		kfree(mqrq_cur->bounce_sg);
+		mqrq_cur->bounce_sg = NULL;
 
-	kfree(mqrq_cur->sg);
-	mqrq_cur->sg = NULL;
+		kfree(mqrq_cur->sg);
+		mqrq_cur->sg = NULL;
 
-	kfree(mqrq_cur->bounce_buf);
-	mqrq_cur->bounce_buf = NULL;
+		kfree(mqrq_cur->bounce_buf);
+		mqrq_cur->bounce_buf = NULL;
 
-	kfree(mqrq_prev->bounce_sg);
-	mqrq_prev->bounce_sg = NULL;
+		kfree(mqrq_prev->bounce_sg);
+		mqrq_prev->bounce_sg = NULL;
 
-	kfree(mqrq_prev->sg);
-	mqrq_prev->sg = NULL;
+		kfree(mqrq_prev->sg);
+		mqrq_prev->sg = NULL;
 
-	kfree(mqrq_prev->bounce_buf);
-	mqrq_prev->bounce_buf = NULL;
-
+		kfree(mqrq_prev->bounce_buf);
+		mqrq_prev->bounce_buf = NULL;
+	}
 	mq->card = NULL;
 }
 EXPORT_SYMBOL(mmc_cleanup_queue);
@@ -651,6 +678,7 @@ int mmc_cmdq_init(struct mmc_queue *mq, struct mmc_card *card)
 
 	blk_queue_softirq_done(mq->queue, mmc_cmdq_softirq_done);
 	INIT_WORK(&mq->cmdq_err_work, mmc_cmdq_error_work);
+	init_completion(&mq->cmdq_shutdown_complete);
 	init_completion(&mq->cmdq_pending_req_done);
 
 	blk_queue_rq_timed_out(mq->queue, mmc_cmdq_rq_timed_out);
@@ -707,7 +735,15 @@ int mmc_queue_suspend(struct mmc_queue *mq, int wait)
 			goto out;
 
 		if (wait) {
-			blk_cleanup_queue(q);
+
+			spin_lock_irqsave(q->queue_lock, flags);
+			blk_stop_queue(q);
+			spin_unlock_irqrestore(q->queue_lock, flags);
+
+			if (host->cmdq_ctx.active_reqs)
+				wait_for_completion(
+						&mq->cmdq_shutdown_complete);
+			kthread_stop(mq->thread);
 			mq->cmdq_shutdown(mq);
 		} else {
 			spin_lock_irqsave(q->queue_lock, flags);

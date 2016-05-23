@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -541,20 +541,17 @@ void msm_slim_tx_msg_return(struct msm_slim_ctrl *dev, int err)
 			dev->bulk.in_progress = false;
 			pm_runtime_mark_last_busy(dev->dev);
 			return;
+		} else if (addr < mem->phys_base || (addr > (mem->phys_base +
+				(MSM_TX_BUFS * SLIM_MSGQ_BUF_LEN)))) {
+			SLIM_WARN(dev, "BUF out of bounds:base:0x%pa, io:0x%pa", &mem->phys_base, &addr);
+			continue;
 		}
 		idx = (int) ((addr - mem->phys_base)
 			/ SLIM_MSGQ_BUF_LEN);
-		if (idx < MSM_TX_BUFS && dev->wr_comp[idx]) {
+		if (dev->wr_comp[idx]) {
 			struct completion *comp = dev->wr_comp[idx];
 			dev->wr_comp[idx] = NULL;
-			complete(comp);
-		} else if (idx >= MSM_TX_BUFS) {
-			SLIM_ERR(dev, "BUF out of bounds:base:0x%pa, io:0x%pa",
-					&mem->phys_base, &addr);
-			/* print BAM debug info for TX pipe */
-			sps_get_bam_debug_info(dev->bam.hdl, 93,
-						SPS_BAM_PIPE(4), 0, 2);
-			continue;
+	                complete(comp);
 		}
 		if (err) {
 			int i;
@@ -563,10 +560,6 @@ void msm_slim_tx_msg_return(struct msm_slim_ctrl *dev, int err)
 			/* print the descriptor that resulted in error */
 			for (i = 0; i < (SLIM_MSGQ_BUF_LEN >> 2); i++)
 				SLIM_WARN(dev, "err desc[%d]:0x%x", i, addr[i]);
-			/* print BAM debug info for TX pipe for invalid TX */
-			if (err == -EINVAL)
-				sps_get_bam_debug_info(dev->bam.hdl, 93,
-							SPS_BAM_PIPE(4), 0, 2);
 		}
 		/* reclaim all packets that were delivered out of order */
 		if (idx != dev->tx_head)
@@ -1540,8 +1533,8 @@ int msm_slim_qmi_init(struct msm_slim_ctrl *dev, bool apps_is_master)
 		goto qmi_connect_to_service_failed;
 	}
 
-	/* Instance is 0 based */
-	req.instance = dev->ctrl.nr - 1;
+	
+	req.instance = (dev->ctrl.nr >> 1);
 	req.mode_valid = 1;
 
 	/* Mode indicates the role of the ADSP */
