@@ -15,34 +15,55 @@
 #ifndef _MC_MAIN_H_
 #define _MC_MAIN_H_
 
-#include <linux/slab.h>		/* gfp_t */
+#include <linux/slab.h>		
+#include <linux/fs.h>		
 
 #define MC_VERSION(major, minor) \
 		(((major & 0x0000ffff) << 16) | (minor & 0x0000ffff))
 #define MC_VERSION_MAJOR(x) ((x) >> 16)
 #define MC_VERSION_MINOR(x) ((x) & 0xffff)
 
-/* MobiCore Driver Kernel Module context data. */
+#define mc_dev_err(fmt, ...) \
+	dev_err(g_ctx.mcd, "%s: " fmt, __func__, ##__VA_ARGS__)
+
+#define mc_dev_info(fmt, ...) \
+	dev_info(g_ctx.mcd, "%s: " fmt, __func__, ##__VA_ARGS__)
+
+#ifdef DEBUG
+#define mc_dev_devel(fmt, ...) \
+	dev_info(g_ctx.mcd, "%s: " fmt, __func__, ##__VA_ARGS__)
+#else 
+#define mc_dev_devel(...)		do {} while (0)
+#endif 
+
 struct mc_device_ctx {
 	struct device		*mcd;
-	/* debugfs root */
+	
 	struct dentry		*debug_dir;
 
-	/* GP sessions waiting final close notif */
-	struct list_head	closing_sess;
-	struct mutex		closing_lock; /* Closing sessions list */
-
-	/* Features */
-	/* - SWd can set a time out to get scheduled at a future time */
+	
+	
+	bool			f_lpae;
+	
 	bool			f_timeout;
-	/* - SWd supports memory extension which allows for bigger TAs */
+	
 	bool			f_mem_ext;
-	/* - SWd supports TA authorisation */
+	
 	bool			f_ta_auth;
-	/* - SWd can map several buffers at once */
+	
 	bool			f_multimap;
-	/* - SWd supports GP client authentication */
+	
 	bool			f_client_login;
+	
+	bool			f_time;
+
+	
+	atomic_t		c_clients;
+	atomic_t		c_cbufs;
+	atomic_t		c_sessions;
+	atomic_t		c_wsms;
+	atomic_t		c_mmus;
+	atomic_t		c_maps;
 };
 
 extern struct mc_device_ctx g_ctx;
@@ -56,5 +77,14 @@ struct kasnprintf_buf {
 
 extern __printf(2, 3)
 int kasnprintf(struct kasnprintf_buf *buf, const char *fmt, ...);
+ssize_t debug_generic_read(struct file *file, char __user *user_buf,
+			   size_t count, loff_t *ppos,
+			   int (*function)(struct kasnprintf_buf *buf));
+int debug_generic_release(struct inode *inode, struct file *file);
 
-#endif /* _MC_MAIN_H_ */
+static inline int kref_read(struct kref *kref)
+{
+	return atomic_read(&kref->refcount);
+}
+
+#endif 

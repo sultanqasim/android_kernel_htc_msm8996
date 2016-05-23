@@ -37,7 +37,7 @@ static void ion_system_secure_heap_free(struct ion_buffer *buffer)
 {
 	int ret = 0;
 	int i;
-	u32 source_vm;
+	int source_vm;
 	int dest_vmid;
 	int dest_perms;
 	struct sg_table *sgt;
@@ -125,11 +125,6 @@ static int ion_system_secure_heap_allocate(struct ion_heap *heap,
 	return ret;
 
 err:
-	/*
-	 * the buffer->size field is populated in the caller of this function
-	 * and hence uninitialized when ops->free is called. Populating the
-	 * field here to handle the error condition correctly.
-	 */
 	buffer->size = size;
 	buffer->heap = secure_heap->sys_heap;
 	secure_heap->sys_heap->ops->free(buffer);

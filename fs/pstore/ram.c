@@ -34,6 +34,7 @@
 #include <linux/slab.h>
 #include <linux/compiler.h>
 #include <linux/pstore_ram.h>
+#include <linux/htc_debug_tools.h>
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
@@ -98,7 +99,7 @@ struct ramoops_context {
 	struct persistent_ram_ecc_info ecc_info;
 	unsigned int max_dump_cnt;
 	unsigned int dump_write_cnt;
-	/* _read_cnt need clear on ramoops_pstore_open */
+	
 	unsigned int dump_read_cnt;
 	unsigned int console_read_cnt;
 	unsigned int ftrace_read_cnt;
@@ -136,7 +137,7 @@ ramoops_get_next_prz(struct persistent_ram_zone *przs[], uint *c, uint max,
 	if (!prz)
 		return NULL;
 
-	/* Update old/shadowed buffer. */
+	
 	if (update)
 		persistent_ram_save_old(prz);
 
@@ -203,7 +204,7 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 
 	size = persistent_ram_old_size(prz);
 
-	/* ECC correction notice */
+	
 	ecc_notice_size = persistent_ram_ecc_string(prz, NULL, 0);
 
 	*buf = kmalloc(size + ecc_notice_size + 1, GFP_KERNEL);
@@ -224,7 +225,7 @@ static size_t ramoops_write_kmsg_hdr(struct persistent_ram_zone *prz,
 	struct timespec timestamp;
 	size_t len;
 
-	/* Report zeroed timestamp if called before timekeeping has resumed. */
+	
 	if (__getnstimeofday(&timestamp)) {
 		timestamp.tv_sec = 0;
 		timestamp.tv_nsec = 0;
@@ -271,22 +272,14 @@ static int notrace ramoops_pstore_write_buf(enum pstore_type_id type,
 	if (type != PSTORE_TYPE_DMESG)
 		return -EINVAL;
 
-	/* Out of the various dmesg dump types, ramoops is currently designed
-	 * to only store crash logs, rather than storing general kernel logs.
-	 */
 	if (reason != KMSG_DUMP_OOPS &&
 	    reason != KMSG_DUMP_PANIC)
 		return -EINVAL;
 
-	/* Skip Oopes when configured to do so. */
+	
 	if (reason == KMSG_DUMP_OOPS && !cxt->dump_oops)
 		return -EINVAL;
 
-	/* Explicitly only take the first part of any new crash.
-	 * If our buffer is larger than kmsg_bytes, this can never happen,
-	 * and if our buffer is smaller than kmsg_bytes, we don't want the
-	 * report split across multiple records.
-	 */
 	if (part != 1)
 		return -ENOSPC;
 
@@ -451,9 +444,6 @@ static int ramoops_probe(struct platform_device *pdev)
 	phys_addr_t paddr;
 	int err = -EINVAL;
 
-	/* Only a single ramoops area allowed at a time, so fail extra
-	 * probes.
-	 */
 	if (cxt->max_dump_cnt)
 		goto fail_out;
 
@@ -506,14 +496,8 @@ static int ramoops_probe(struct platform_device *pdev)
 		goto fail_init_mprz;
 
 	cxt->pstore.data = cxt;
-	/*
-	 * Console can handle any buffer size, so prefer LOG_LINE_MAX. If we
-	 * have to handle dumps, we must have at least record_size buffer. And
-	 * for ftrace, bufsize is irrelevant (if bufsize is 0, buf will be
-	 * ZERO_SIZE_PTR).
-	 */
 	if (cxt->console_size)
-		cxt->pstore.bufsize = 1024; /* LOG_LINE_MAX */
+		cxt->pstore.bufsize = 1024; 
 	cxt->pstore.bufsize = max(cxt->record_size, cxt->pstore.bufsize);
 	cxt->pstore.buf = kmalloc(cxt->pstore.bufsize, GFP_KERNEL);
 	spin_lock_init(&cxt->pstore.buf_lock);
@@ -529,10 +513,6 @@ static int ramoops_probe(struct platform_device *pdev)
 		goto fail_buf;
 	}
 
-	/*
-	 * Update the module parameter variables as well so they are visible
-	 * through /sys/module/ramoops/parameters/
-	 */
 	mem_size = pdata->mem_size;
 	mem_address = pdata->mem_address;
 	record_size = pdata->record_size;
@@ -541,6 +521,13 @@ static int ramoops_probe(struct platform_device *pdev)
 	pr_info("attached 0x%lx@0x%llx, ecc: %d/%d\n",
 		cxt->size, (unsigned long long)cxt->phys_addr,
 		cxt->ecc_info.ecc_size, cxt->ecc_info.block_size);
+
+#if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
+	if (cxt->console_size)
+	{
+		bldr_log_init();
+	}
+#endif
 
 	return 0;
 
@@ -563,18 +550,18 @@ fail_out:
 static int __exit ramoops_remove(struct platform_device *pdev)
 {
 #if 0
-	/* TODO(kees): We cannot unload ramoops since pstore doesn't support
-	 * unregistering yet.
-	 */
 	struct ramoops_context *cxt = &oops_cxt;
 
 	iounmap(cxt->virt_addr);
 	release_mem_region(cxt->phys_addr, cxt->size);
 	cxt->max_dump_cnt = 0;
 
-	/* TODO(kees): When pstore supports unregistering, call it here. */
+	
 	kfree(cxt->pstore.buf);
 	cxt->pstore.bufsize = 0;
+#if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
+	bldr_log_release();
+#endif
 
 	return 0;
 #endif
@@ -611,10 +598,6 @@ static void ramoops_register_dummy(void)
 	dummy_data->ftrace_size = ramoops_ftrace_size;
 	dummy_data->pmsg_size = ramoops_pmsg_size;
 	dummy_data->dump_oops = dump_oops;
-	/*
-	 * For backwards compatibility ramoops.ecc=1 means 16 bytes ECC
-	 * (using 1 byte for ECC isn't much of use anyway).
-	 */
 	dummy_data->ecc_info.ecc_size = ramoops_ecc == 1 ? 16 : ramoops_ecc;
 
 	dummy = platform_device_register_data(NULL, "ramoops", -1,

@@ -485,13 +485,34 @@ config ARM64_ICACHE_DISABLE
 
 	  If you are not sure what to do, select 'N' here.
 
+config MSM_APP_API
+	bool "API support to enable / disable app settings for MSM8996"
+	depends on ARCH_MSM8996 && (ENABLE_FP_SIMD_SETTINGS || MSM_APP_SETTINGS)
+	help
+	  Add API support to enable / disable the app settings to be used
+	  at runtime. These APIs are used to enable / disable app setting
+	  when specific aarch32 or aarch64 processes are running.
+
+	  If you are not sure what to do, select 'N' here.
+
 config ENABLE_FP_SIMD_SETTINGS
 	bool "Enable FP(Floating Point) Settings for Qualcomm MSM8996"
 	depends on ARCH_MSM8996
+	select MSM_APP_API
 	help
 	  Enable FP(Floating Point) and SIMD settings for the MSM8996 during
 	  the execution of the aarch32 processes and disable these settings
 	  when you switch to the aarch64 processes.
+
+	  If you are not sure what to do, select 'N' here.
+
+config MSM_APP_SETTINGS
+	bool "Support to enable / disable app settings for MSM8996"
+	depends on ARCH_MSM8996
+	select MSM_APP_API
+	help
+	  Expose an interface used by the userspace at runtime to
+	  enable / disable the app specific settings.
 
 	  If you are not sure what to do, select 'N' here.
 
@@ -584,6 +605,13 @@ config SCHED_SMT
 	  Improves the CPU scheduler's decision making when dealing with
 	  MultiThreading at a cost of slightly increased overhead in some
 	  places. If unsure say N here.
+
+config HTC_POWER_DEBUG
+        bool "Support htc power debug feature"
+        help
+         Use this to enable htc power debug feature including pm statistics,
+         clock/gpio/qpnp pin dump, wakeup source, kerenl top and autosuspend
+         stage footprint
 
 config NR_CPUS
 	int "Maximum number of CPUs (2-64)"
@@ -913,6 +941,8 @@ source "drivers/firmware/Kconfig"
 source "fs/Kconfig"
 
 source "arch/arm64/kvm/Kconfig"
+
+source "arch/arm64/Kconfig.htc"
 
 source "arch/arm64/Kconfig.debug"
 

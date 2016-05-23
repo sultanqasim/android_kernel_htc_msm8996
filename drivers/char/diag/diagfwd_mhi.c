@@ -90,7 +90,7 @@ static int mhi_ch_open(struct diag_mhi_ch_t *ch)
 		return -EINVAL;
 
 	if (atomic_read(&ch->opened)) {
-		pr_debug("diag: In %s, channel is already opened, id: %d\n",
+		DIAGFWD_DBUG("diag: In %s, channel is already opened, id: %d\n",
 			 __func__, ch->type);
 		return 0;
 	}
@@ -200,9 +200,9 @@ static void mhi_buf_tbl_clear(struct diag_mhi_info *mhi_info)
 	if (!mhi_info || !mhi_info->enabled)
 		return;
 
-	/* Clear all the pending reads */
+	
 	ch = &mhi_info->read_ch;
-	/* At this point, the channel should already by closed */
+	
 	if (!(atomic_read(&ch->opened))) {
 		spin_lock_irqsave(&ch->lock, flags);
 		list_for_each_safe(start, temp, &ch->buf_tbl) {
@@ -216,9 +216,9 @@ static void mhi_buf_tbl_clear(struct diag_mhi_info *mhi_info)
 		spin_unlock_irqrestore(&ch->lock, flags);
 	}
 
-	/* Clear all the pending writes */
+	
 	ch = &mhi_info->write_ch;
-	/* At this point, the channel should already by closed */
+	
 	if (!(atomic_read(&ch->opened))) {
 		spin_lock_irqsave(&ch->lock, flags);
 		list_for_each_safe(start, temp, &ch->buf_tbl) {
@@ -271,11 +271,6 @@ static int mhi_close(int id)
 
 	if (!diag_mhi[id].enabled)
 		return -ENODEV;
-	/*
-	 * This function is called whenever the channel needs to be closed
-	 * explicitly by Diag. Close both the read and write channels (denoted
-	 * by CLOSE_CHANNELS flag)
-	 */
 	return __mhi_close(&diag_mhi[id], CLOSE_CHANNELS);
 }
 
@@ -284,11 +279,6 @@ static void mhi_close_work_fn(struct work_struct *work)
 	struct diag_mhi_info *mhi_info = container_of(work,
 						      struct diag_mhi_info,
 						      close_work);
-	/*
-	 * This is a part of work function which is queued after the channels
-	 * are explicitly closed. Do not close channels again (denoted by
-	 * CHANNELS_CLOSED flag)
-	 */
 	if (mhi_info)
 		__mhi_close(mhi_info, CHANNELS_CLOSED);
 }
@@ -347,11 +337,6 @@ static int mhi_open(int id)
 
 	if (!diag_mhi[id].enabled)
 		return -ENODEV;
-	/*
-	 * This function is called whenever the channel needs to be opened
-	 * explicitly by Diag. Open both the read and write channels (denoted by
-	 * OPEN_CHANNELS flag)
-	 */
 	__mhi_open(&diag_mhi[id], OPEN_CHANNELS);
 	diag_remote_dev_open(diag_mhi[id].dev_id);
 	queue_work(diag_mhi[id].mhi_wq, &(diag_mhi[id].read_work));
@@ -364,11 +349,6 @@ static void mhi_open_work_fn(struct work_struct *work)
 	struct diag_mhi_info *mhi_info = container_of(work,
 						      struct diag_mhi_info,
 						      open_work);
-	/*
-	 * This is a part of work function which is queued after the channels
-	 * are explicitly opened. Do not open channels again (denoted by
-	 * CHANNELS_OPENED flag)
-	 */
 	if (mhi_info) {
 		diag_remote_dev_open(mhi_info->dev_id);
 		queue_work(mhi_info->mhi_wq, &(mhi_info->read_work));
@@ -391,7 +371,7 @@ static void mhi_read_done_work_fn(struct work_struct *work)
 			break;
 		err = mhi_poll_inbound(mhi_info->read_ch.hdl, &result);
 		if (err) {
-			pr_debug("diag: In %s, err %d\n", __func__, err);
+			DIAGFWD_DBUG("diag: In %s, err %d\n", __func__, err);
 			break;
 		}
 		buf = result.buf_addr;
@@ -400,11 +380,6 @@ static void mhi_read_done_work_fn(struct work_struct *work)
 		DIAG_LOG(DIAG_DEBUG_BRIDGE,
 			 "read from mhi port %d buf %p\n",
 			 mhi_info->id, buf);
-		/*
-		 * The read buffers can come after the MHI channels are closed.
-		 * If the channels are closed at the time of read, discard the
-		 * buffers here and do not forward them to the mux layer.
-		 */
 		if ((atomic_read(&(mhi_info->read_ch.opened)))) {
 			diag_remote_dev_read_done(mhi_info->dev_id, buf,
 						  result.bytes_xferd);
@@ -609,11 +584,6 @@ static void mhi_notifier(struct mhi_cb_info *cb_info)
 		__mhi_close(&diag_mhi[index], CHANNELS_CLOSED);
 		break;
 	case MHI_CB_XFER:
-		/*
-		 * If the channel is a read channel, this is a read
-		 * complete notification - write complete if the channel is
-		 * a write channel.
-		 */
 		if (type == TYPE_MHI_READ_CH) {
 			if (!atomic_read(&(diag_mhi[index].read_ch.opened)))
 				break;

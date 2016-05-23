@@ -64,11 +64,6 @@ static void diag_hsic_read_complete(void *ctxt, char *buf, int len,
 	}
 	ch = &diag_hsic[index];
 
-	/*
-	 * Don't pass on the buffer if the channel is closed when a pending read
-	 * completes. Also, actual size can be negative error codes - do not
-	 * pass on the buffer.
-	 */
 	if (!ch->opened || actual_size <= 0)
 		goto fail;
 	err = diag_remote_dev_read_done(ch->dev_id, buf, actual_size);
@@ -169,7 +164,7 @@ static int hsic_open(int id)
 		return -ENODEV;
 
 	if (ch->opened) {
-		pr_debug("diag: HSIC channel %d is already opened\n", ch->id);
+		DIAGFWD_DBUG("diag: HSIC channel %d is already opened\n", ch->id);
 		return -ENODEV;
 	}
 
@@ -183,7 +178,7 @@ static int hsic_open(int id)
 	ch->opened = 1;
 	spin_unlock_irqrestore(&ch->lock, flags);
 	diagmem_init(driver, ch->mempool);
-	/* Notify the bridge that the channel is open */
+	
 	diag_remote_dev_open(ch->dev_id);
 	queue_work(ch->hsic_wq, &(ch->read_work));
 	return 0;
@@ -212,7 +207,7 @@ static int hsic_close(int id)
 		return -ENODEV;
 
 	if (!ch->opened) {
-		pr_debug("diag: HSIC channel %d is already closed\n", ch->id);
+		DIAGFWD_DBUG("diag: HSIC channel %d is already closed\n", ch->id);
 		return -ENODEV;
 	}
 
@@ -258,7 +253,7 @@ static void hsic_read_work_fn(struct work_struct *work)
 		}
 	} while (buf);
 
-	/* Read from the HSIC channel continously if the channel is present */
+	
 	if (!err)
 		queue_work(ch->hsic_wq, &ch->read_work);
 }
@@ -271,7 +266,7 @@ static int diag_hsic_probe(struct platform_device *pdev)
 	if (!pdev)
 		return -EIO;
 
-	pr_debug("diag: hsic probe pdev: %d\n", pdev->id);
+	DIAGFWD_DBUG("diag: hsic probe pdev: %d\n", pdev->id);
 	if (pdev->id >= NUM_HSIC_DEV) {
 		pr_err("diag: No support for HSIC device %d\n", pdev->id);
 		return -EIO;
@@ -294,7 +289,7 @@ static int diag_hsic_remove(struct platform_device *pdev)
 	if (!pdev)
 		return -EIO;
 
-	pr_debug("diag: hsic close pdev: %d\n", pdev->id);
+	DIAGFWD_DBUG("diag: hsic close pdev: %d\n", pdev->id);
 	if (pdev->id >= NUM_HSIC_DEV) {
 		pr_err("diag: No support for HSIC device %d\n", pdev->id);
 		return -EIO;
@@ -361,7 +356,7 @@ static int hsic_write(int id, unsigned char *buf, int len, int ctxt)
 
 	ch = &diag_hsic[id];
 	if (!ch->opened || !ch->enabled) {
-		pr_debug_ratelimited("diag: In %s, ch %d is disabled. opened %d enabled: %d\n",
+		DIAGFWD_DBUG("diag: In %s, ch %d is disabled. opened %d enabled: %d\n",
 				     __func__, id, ch->opened, ch->enabled);
 		return -EIO;
 	}

@@ -22,7 +22,6 @@
 
 static struct snd_soc_dai_ops msm_fe_dai_ops = {};
 
-/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
 	88200, 96000, 176400, 192000
@@ -348,7 +347,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "MultiMedia8",
 		.probe = fe_dai_probe,
 	},
-	/* FE DAIs created for hostless operation purpose */
+	
 	{
 		.playback = {
 			.stream_name = "SLIMBUS0_HOSTLESS Playback",
@@ -689,12 +688,12 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.playback = {
 			.stream_name = "Primary MI2S_RX Hostless Playback",
 			.aif_name = "PRI_MI2S_DL_HL",
-			.rates = SNDRV_PCM_RATE_8000_48000,
+			.rates = SNDRV_PCM_RATE_8000_192000,
 			.formats = SNDRV_PCM_FMTBIT_S16_LE,
 			.channels_min = 1,
 			.channels_max = 2,
 			.rate_min =     8000,
-			.rate_max =    48000,
+			.rate_max =    192000,
 		},
 		.ops = &msm_fe_dai_ops,
 		.name = "PRI_MI2S_RX_HOSTLESS",
@@ -718,14 +717,47 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 	},
 	{
 		.playback = {
-			.stream_name = "Secondary MI2S_RX Hostless Playback",
-			.aif_name = "SEC_MI2S_DL_HL",
-			.rates = SNDRV_PCM_RATE_8000_48000,
-			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.stream_name = "Tertiary MI2S_RX Hostless Playback",
+			.aif_name = "TERT_MI2S_DL_HL",
+			.rates = SNDRV_PCM_RATE_8000_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S24_LE,
 			.channels_min = 1,
 			.channels_max = 2,
 			.rate_min =	8000,
-			.rate_max =    48000,
+			.rate_max =    192000,
+		},
+		.ops = &msm_fe_dai_ops,
+		.name = "TERT_MI2S_RX_HOSTLESS",
+		.probe = fe_dai_probe,
+	},
+	{
+		.capture = {
+			.stream_name = "Secondary MI2S_TX Hostless Capture",
+			.aif_name = "SEC_MI2S_UL_HL",
+			.rates = SNDRV_PCM_RATE_8000_48000,
+			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S24_LE),
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 48000,
+		},
+		.ops = &msm_fe_dai_ops,
+		.name = "SEC_MI2S_TX_HOSTLESS",
+		.probe = fe_dai_probe,
+	},
+	{
+		.playback = {
+			.stream_name = "Secondary MI2S_RX Hostless Playback",
+			.aif_name = "SEC_MI2S_DL_HL",
+			.rates = SNDRV_PCM_RATE_8000_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S24_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min =	8000,
+			.rate_max =    192000,
 		},
 		.ops = &msm_fe_dai_ops,
 		.name = "SEC_MI2S_RX_HOSTLESS",
@@ -751,18 +783,19 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.playback = {
 			.stream_name = "Quaternary MI2S_RX Hostless Playback",
 			.aif_name = "QUAT_MI2S_DL_HL",
-			.rates = SNDRV_PCM_RATE_8000_48000,
-			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.rates = SNDRV_PCM_RATE_8000_192000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S24_LE,
 			.channels_min = 1,
-			.channels_max = 2,
+			.channels_max = 6,
 			.rate_min = 8000,
-			.rate_max =    48000,
+			.rate_max =    192000,
 		},
 		.ops = &msm_fe_dai_ops,
 		.name = "QUAT_MI2S_RX_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
-	/* TDM Hostless */
+	
 	{
 		.capture = {
 			.stream_name = "Primary TDM0 Hostless Capture",
@@ -2117,7 +2150,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "VoWLAN",
 		.probe = fe_dai_probe,
 	},
-	/* FE DAIs created for multiple instances of offload playback */
+	
 	{
 		.playback = {
 			.stream_name = "MultiMedia10 Playback",
@@ -2338,6 +2371,5 @@ static void __exit msm_fe_dai_exit(void)
 }
 module_exit(msm_fe_dai_exit);
 
-/* Module information */
 MODULE_DESCRIPTION("MSM Frontend DAI driver");
 MODULE_LICENSE("GPL v2");

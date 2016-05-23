@@ -35,7 +35,7 @@ struct persistent_ram_buffer {
 	uint8_t     data[0];
 };
 
-#define PERSISTENT_RAM_SIG (0x43474244) /* DBGC */
+#define PERSISTENT_RAM_SIG (0x43474244) 
 
 static inline size_t buffer_size(struct persistent_ram_zone *prz)
 {
@@ -47,7 +47,6 @@ static inline size_t buffer_start(struct persistent_ram_zone *prz)
 	return atomic_read(&prz->buffer->start);
 }
 
-/* increase and wrap the start pointer, returning the old value */
 static size_t buffer_start_add_atomic(struct persistent_ram_zone *prz, size_t a)
 {
 	int old;
@@ -63,7 +62,6 @@ static size_t buffer_start_add_atomic(struct persistent_ram_zone *prz, size_t a)
 	return old;
 }
 
-/* increase the size counter until it hits the max size */
 static void buffer_size_add_atomic(struct persistent_ram_zone *prz, size_t a)
 {
 	size_t old;
@@ -82,7 +80,6 @@ static void buffer_size_add_atomic(struct persistent_ram_zone *prz, size_t a)
 
 static DEFINE_RAW_SPINLOCK(buffer_lock);
 
-/* increase and wrap the start pointer, returning the old value */
 static size_t buffer_start_add_locked(struct persistent_ram_zone *prz, size_t a)
 {
 	int old;
@@ -102,7 +99,6 @@ static size_t buffer_start_add_locked(struct persistent_ram_zone *prz, size_t a)
 	return old;
 }
 
-/* increase the size counter until it hits the max size */
 static void buffer_size_add_locked(struct persistent_ram_zone *prz, size_t a)
 {
 	size_t old;
@@ -133,7 +129,7 @@ static void notrace persistent_ram_encode_rs8(struct persistent_ram_zone *prz,
 	int i;
 	uint16_t par[prz->ecc_info.ecc_size];
 
-	/* Initialize the parity buffer */
+	
 	memset(par, 0, sizeof(par));
 	encode_rs8(prz->rs_decoder, data, len, par, 0);
 	for (i = 0; i < prz->ecc_info.ecc_size; i++)
@@ -250,10 +246,6 @@ static int persistent_ram_init_ecc(struct persistent_ram_zone *prz,
 	prz->par_header = prz->par_buffer +
 			  ecc_blocks * prz->ecc_info.ecc_size;
 
-	/*
-	 * first consecutive root is 0
-	 * primitive element to generate roots = 1
-	 */
 	prz->rs_decoder = init_rs(prz->ecc_info.symsize, prz->ecc_info.poly,
 				  0, 1, prz->ecc_info.ecc_size);
 	if (prz->rs_decoder == NULL) {
@@ -299,7 +291,7 @@ static void notrace persistent_ram_update(struct persistent_ram_zone *prz,
 	const void *s, unsigned int start, unsigned int count)
 {
 	struct persistent_ram_buffer *buffer = prz->buffer;
-	memcpy(buffer->data + start, s, count);
+	memcpy_toio(buffer->data + start, s, count);
 	persistent_ram_update_ecc(prz, start, count);
 }
 
@@ -322,8 +314,8 @@ void persistent_ram_save_old(struct persistent_ram_zone *prz)
 	}
 
 	prz->old_log_size = size;
-	memcpy(prz->old_log, &buffer->data[start], size - start);
-	memcpy(prz->old_log + size - start, &buffer->data[0], start);
+	memcpy_fromio(prz->old_log, &buffer->data[start], size - start);
+	memcpy_fromio(prz->old_log + size - start, &buffer->data[0], start);
 }
 
 int notrace persistent_ram_write(struct persistent_ram_zone *prz,
