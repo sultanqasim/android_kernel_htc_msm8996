@@ -29,4 +29,4 @@ struct keyreset_platform_data {
 	uint32_t *vzw_keys_down; 
 };
 
-#endif 
+#endif /* _LINUX_KEYRESET_H */

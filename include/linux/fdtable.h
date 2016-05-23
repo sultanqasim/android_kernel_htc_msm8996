@@ -1,3 +1,6 @@
+/*
+ * descriptor table internals; you almost certainly want file.h instead.
+ */
 
 #ifndef __LINUX_FDTABLE_H
 #define __LINUX_FDTABLE_H
@@ -12,6 +15,10 @@
 
 #include <linux/atomic.h>
 
+/*
+ * The default fd array needs to be at least BITS_PER_LONG,
+ * as this is the granularity returned by copy_fdset().
+ */
 #define NR_OPEN_DEFAULT BITS_PER_LONG
 
 struct fdt_user {
@@ -40,7 +47,13 @@ static inline bool fd_is_open(int fd, const struct fdtable *fdt)
 	return test_bit(fd, fdt->open_fds);
 }
 
+/*
+ * Open file table structure
+ */
 struct files_struct {
+  /*
+   * read mostly part
+   */
 	atomic_t count;
 	struct fdtable __rcu *fdt;
 	struct fdtable fdtab;
@@ -65,6 +78,9 @@ struct dentry;
 #define files_fdtable(files) \
 	rcu_dereference_check_fdtable((files), (files)->fdt)
 
+/*
+ * The caller must ensure that fd table isn't shared or hold rcu or file lock
+ */
 static inline struct file *__fcheck_files(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = rcu_dereference_raw(files->fdt);
@@ -82,6 +98,9 @@ static inline struct file *fcheck_files(struct files_struct *files, unsigned int
 	return __fcheck_files(files, fd);
 }
 
+/*
+ * Check whether the specified fd has an open file.
+ */
 #define fcheck(fd)	fcheck_files(current->files, fd)
 
 struct task_struct;
@@ -105,4 +124,4 @@ extern int __close_fd(struct files_struct *files,
 
 extern struct kmem_cache *files_cachep;
 
-#endif 
+#endif /* __LINUX_FDTABLE_H */

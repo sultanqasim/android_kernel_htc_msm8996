@@ -382,6 +382,10 @@ static void __hphocp_off_report(struct wcd_mbhc *mbhc, u32 jack_status,
 				     mbhc->hph_status, WCD_MBHC_JACK_MASK);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_OCP_FSM_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_OCP_FSM_EN, 1);
+		/*
+		 * reset retry counter as PA is turned off signifying
+		 * start of new OCP detection session
+		 */
 		if (mbhc->intr_ids->hph_left_ocp)
 			mbhc->hphlocp_cnt = 0;
 		else
@@ -440,6 +444,12 @@ static void wcd_enable_curr_micbias(const struct wcd_mbhc *mbhc,
 				const enum wcd_mbhc_cs_mb_en_flag cs_mb_en)
 {
 
+	/*
+	 * Some codecs handle micbias/pullup enablement in codec
+	 * drivers itself and micbias is not needed for regular
+	 * plug type detection. So if micbias_control callback function
+	 * is defined, just return.
+	 */
 	if (mbhc->mbhc_cb->mbhc_micbias_control)
 		return;
 
@@ -449,23 +459,23 @@ static void wcd_enable_curr_micbias(const struct wcd_mbhc *mbhc,
 	case WCD_MBHC_EN_CS:
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 3);
-		
+		/* Program Button threshold registers as per CS */
 		wcd_program_btn_threshold(mbhc, false);
 		break;
 	case WCD_MBHC_EN_MB:
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 1);
 
-		
+		/* Disable PULL_UP_EN & enable MICBIAS */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 2);
-		
+		/* Program Button threshold registers as per MICBIAS */
 		wcd_program_btn_threshold(mbhc, true);
 		break;
 	case WCD_MBHC_EN_PULLUP:
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 3);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 1);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MICB_CTRL, 1);
-		
+		/* Program Button threshold registers as per MICBIAS */
 		wcd_program_btn_threshold(mbhc, true);
 		break;
 	case WCD_MBHC_EN_NONE:
@@ -537,7 +547,7 @@ static int wcd_event_notify(struct notifier_block *self, unsigned long val,
 								MIC_BIAS_1);
 	}
 	switch (event) {
-	
+	/* MICBIAS usage change */
 	case WCD_EVENT_POST_DAPM_MICBIAS_2_ON:
 		mbhc->is_hs_recording = true;
 		pr_debug("%s: is_capture: %d\n", __func__,
@@ -553,6 +563,10 @@ static int wcd_event_notify(struct notifier_block *self, unsigned long val,
 			mbhc->mbhc_cb->mbhc_common_micb_ctrl(codec,
 					MBHC_COMMON_MICB_SET_VAL,
 					true);
+			/*
+			 * Special headset needs MICBIAS as 2.7V so wait for
+			 * 50 msec for the MICBIAS to reach 2.7 volts.
+			 */
 			msleep(50);
 		}
 		if (mbhc->mbhc_cb->set_auto_zeroing)
@@ -562,7 +576,7 @@ static int wcd_event_notify(struct notifier_block *self, unsigned long val,
 					MBHC_COMMON_MICB_PRECHARGE,
 					false);
 out_micb_en:
-		
+		/* Disable current source if micbias enabled */
 		if (mbhc->mbhc_cb->mbhc_micbias_control) {
 			WCD_MBHC_REG_READ(WCD_MBHC_FSM_EN, fsm_en);
 			if (fsm_en)
@@ -572,11 +586,16 @@ out_micb_en:
 			mbhc->is_hs_recording = true;
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		}
-		
+		/* configure cap settings properly when micbias is enabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
 			mbhc->mbhc_cb->set_cap_mode(codec, micbias1, true);
 		break;
 	case WCD_EVENT_PRE_MICBIAS_2_OFF:
+		/*
+		 * Before MICBIAS_2 is turned off, if FSM is enabled,
+		 * make sure current source is enabled so as to detect
+		 * button press/release events
+		 */
 		if (mbhc->mbhc_cb->mbhc_micbias_control &&
 		    !mbhc->micbias_enable) {
 			WCD_MBHC_REG_READ(WCD_MBHC_FSM_EN, fsm_en);
@@ -585,7 +604,7 @@ out_micb_en:
 							 3);
 		}
 		break;
-	
+	/* MICBIAS usage change */
 	case WCD_EVENT_POST_DAPM_MICBIAS_2_OFF:
 		mbhc->is_hs_recording = false;
 		pr_debug("%s: is_capture: %d\n", __func__,
@@ -598,17 +617,17 @@ out_micb_en:
 			mbhc->mbhc_cb->set_micbias_value(codec);
 		if (!mbhc->mbhc_cb->mbhc_micbias_control)
 			mbhc->is_hs_recording = false;
-		
+		/* Enable PULL UP if PA's are enabled */
 		if ((test_bit(WCD_MBHC_EVENT_PA_HPHL, &mbhc->event_state)) ||
 				(test_bit(WCD_MBHC_EVENT_PA_HPHR,
 					  &mbhc->event_state)))
-			
+			/* enable pullup and cs, disable mb */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		else
-			
+			/* enable current source and disable mb, pullup*/
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 
-		
+		/* configure cap settings properly when micbias is disabled */
 		if (mbhc->mbhc_cb->set_cap_mode)
 			mbhc->mbhc_cb->set_cap_mode(codec, micbias1, false);
 		break;
@@ -620,12 +639,12 @@ out_micb_en:
 		if (mbhc->hph_status & SND_JACK_OC_HPHL)
 			hphlocp_off_report(mbhc, SND_JACK_OC_HPHL);
 		clear_bit(WCD_MBHC_EVENT_PA_HPHL, &mbhc->event_state);
-		
+		/* check if micbias is enabled */
 		if (micbias2)
-			
+			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
-			
+			/* Disable micbias, pullup & enable cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 		mutex_unlock(&mbhc->hphl_pa_lock);
 		break;
@@ -637,33 +656,33 @@ out_micb_en:
 		if (mbhc->hph_status & SND_JACK_OC_HPHR)
 			hphrocp_off_report(mbhc, SND_JACK_OC_HPHR);
 		clear_bit(WCD_MBHC_EVENT_PA_HPHR, &mbhc->event_state);
-		
+		/* check if micbias is enabled */
 		if (micbias2)
-			
+			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
-			
+			/* Disable micbias, pullup & enable cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 		mutex_unlock(&mbhc->hphr_pa_lock);
 		break;
 	case WCD_EVENT_PRE_HPHL_PA_ON:
 		set_bit(WCD_MBHC_EVENT_PA_HPHL, &mbhc->event_state);
-		
+		/* check if micbias is enabled */
 		if (micbias2)
-			
+			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
-			
+			/* Disable micbias, enable pullup & cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		break;
 	case WCD_EVENT_PRE_HPHR_PA_ON:
 		set_bit(WCD_MBHC_EVENT_PA_HPHR, &mbhc->event_state);
-		
+		/* check if micbias is enabled */
 		if (micbias2)
-			
+			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 		else
-			
+			/* Disable micbias, enable pullup & cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		break;
 	default:
@@ -677,6 +696,10 @@ static int wcd_cancel_btn_work(struct wcd_mbhc *mbhc)
 	int r;
 
 	r = cancel_delayed_work_sync(&mbhc->mbhc_btn_dwork);
+	/*
+	 * if scheduled mbhc.mbhc_btn_dwork is canceled from here,
+	 * we have to unlock from here instead btn_work
+	 */
 	if (r)
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	return r;
@@ -690,6 +713,7 @@ static bool wcd_swch_level_remove(struct wcd_mbhc *mbhc)
 	return (result2) ? true : false;
 }
 
+/* should be called under interrupt context that hold suspend */
 static void wcd_schedule_hs_detect_plug(struct wcd_mbhc *mbhc,
 					    struct work_struct *work)
 {
@@ -700,6 +724,7 @@ static void wcd_schedule_hs_detect_plug(struct wcd_mbhc *mbhc,
 	schedule_work(work);
 }
 
+/* called under codec_resource_lock acquisition */
 static void wcd_cancel_hs_detect_plug(struct wcd_mbhc *mbhc,
 					 struct work_struct *work)
 {
@@ -762,6 +787,8 @@ static void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc)
 	WCD_MBHC_REG_READ(WCD_MBHC_HPH_CNP_WG_TIME, wg_time);
 	wg_time += 1;
 
+	/* If headphone PA is on, check if userspace receives
+	* removal event to sync-up PA's state */
 	if (wcd_mbhc_is_hph_pa_on(mbhc)) {
 		pr_debug("%s PA is on, setting PA_OFF_ACK\n", __func__);
 		set_bit(WCD_MBHC_HPHL_PA_OFF_ACK, &mbhc->hph_pa_dac_state);
@@ -828,8 +855,12 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 	}
 
 	if (!insertion) {
-		
+		/* Report removal */
 		mbhc->hph_status &= ~jack_type;
+		/*
+		 * cancel possibly scheduled btn work and
+		 * report release if we reported button press
+		 */
 		if (wcd_cancel_btn_work(mbhc)) {
 			pr_debug("%s: button press is canceled\n", __func__);
 		} else if (mbhc->buttons_pressed) {
@@ -864,6 +895,11 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 		hphlocp_off_report(mbhc, SND_JACK_OC_HPHL);
 		mbhc->current_plug = MBHC_PLUG_TYPE_NONE;
 	} else {
+		/*
+		 * Report removal of current jack type.
+		 * Headphone to headset shouldn't report headphone
+		 * removal.
+		 */
 		if (mbhc->mbhc_cfg->detect_extn_cable &&
 		    (mbhc->current_plug == MBHC_PLUG_TYPE_HIGH_HPH ||
 		    jack_type == SND_JACK_LINEOUT) &&
@@ -890,7 +926,7 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			if (mbhc->hph_status == SND_JACK_LINEOUT) {
 
 				pr_debug("%s: Enable micbias\n", __func__);
-				
+				/* Disable current source and enable micbias */
 				wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 				pr_info("%s: set up elec removal detection\n",
 					  __func__); 
@@ -911,7 +947,7 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			jack_type == SND_JACK_HEADPHONE)
 			mbhc->hph_status &= ~SND_JACK_HEADSET;
 
-		
+		/* Report insertion */
 		if (jack_type == SND_JACK_HEADPHONE)
 			mbhc->current_plug = MBHC_PLUG_TYPE_HEADPHONE;
 		else if (jack_type == SND_JACK_UNSUPPORTED)
@@ -977,6 +1013,10 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 	}
 
 	if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
+		/*
+		 * Nothing was reported previously
+		 * report a headphone or unsupported
+		 */
 		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADPHONE);
 	} else if (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
 			if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
@@ -989,17 +1029,21 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADSET);
 	} else if (plug_type == MBHC_PLUG_TYPE_HIGH_HPH) {
 		if (mbhc->mbhc_cfg->detect_extn_cable) {
-			
+			/* High impedance device found. Report as LINEOUT */
 			wcd_mbhc_report_plug(mbhc, 1, SND_JACK_LINEOUT);
 			pr_info("%s: setup mic trigger for further detection\n",
 				 __func__); 
 
-			
+			/* Disable HW FSM and current source */
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 0);
-			
+			/* Setup for insertion detection */
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_DETECTION_TYPE,
 						 1);
+			/*
+			 * Enable HPHL trigger and MIC Schmitt triggers
+			 * and request for elec insertion interrupts
+			 */
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_SCHMT_ISRC,
 						 3);
 			wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_INS,
@@ -1015,6 +1059,7 @@ exit:
 	pr_debug("%s: leave\n", __func__);
 }
 
+/* To determine if cross connection occured */
 static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 {
 	u16 swap_res = 0; 
@@ -1028,12 +1073,25 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	}
 
 	WCD_MBHC_REG_READ(WCD_MBHC_ELECT_SCHMT_ISRC, reg1);
+	/*
+	 * Check if there is any cross connection,
+	 * Micbias and schmitt trigger (HPHL-HPHR)
+	 * needs to be enabled. For some codecs like wcd9335,
+	 * pull-up will already be enabled when this function
+	 * is called for cross-connection identification. No
+	 * need to enable micbias in that case.
+	 */
 	wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_SCHMT_ISRC, 2);
 
 	WCD_MBHC_REG_READ(WCD_MBHC_ELECT_RESULT, swap_res);
 	pr_debug("%s: swap_res%x\n", __func__, swap_res);
 
+	/*
+	 * Read reg hphl and hphr schmitt result with cross connection
+	 * bit. These bits will both be "0" in case of cross connection
+	 * otherwise, they stay at 1
+	 */
 	WCD_MBHC_REG_READ(WCD_MBHC_HPHL_SCHMT_RESULT, hphl_sch_res);
 	WCD_MBHC_REG_READ(WCD_MBHC_HPHR_SCHMT_RESULT, hphr_sch_res);
 	if (!(hphl_sch_res || hphr_sch_res)) {
@@ -1043,7 +1101,7 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 		pr_debug("%s: No Cross connection found\n", __func__);
 	}
 
-	
+	/* Disable schmitt trigger and restore micbias */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_SCHMT_ISRC, reg1);
 	pr_info("%s: leave, plug type: %d\n", __func__,  plug_type); 
 
@@ -1057,6 +1115,10 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 	bool ret = false;
 	bool hs_comp_res = false; 
 
+	/*
+	 * Increase micbias to 2.7V to detect headsets with
+	 * threshold on microphone
+	 */
 	if (mbhc->mbhc_cb->mbhc_micbias_control &&
 	    !mbhc->mbhc_cb->mbhc_micb_ctrl_thr_mic) {
 		pr_debug("%s: callback fn micb_ctrl_thr_mic not defined\n",
@@ -1092,11 +1154,11 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 					MBHC_COMMON_MICB_SET_VAL,
 					true);
 		}
-		
+		/* Wait for 50msec for MICBIAS to settle down */
 		msleep(50);
 		if (mbhc->mbhc_cb->set_auto_zeroing)
 			mbhc->mbhc_cb->set_auto_zeroing(codec, true);
-		
+		/* Wait for 50msec for FSM to update result values */
 		msleep(50);
 		WCD_MBHC_REG_READ(WCD_MBHC_HS_COMP_RESULT, hs_comp_res);
 		if (!(hs_comp_res))
@@ -1160,6 +1222,14 @@ static void wcd_enable_mbhc_supply(struct wcd_mbhc *mbhc,
 
 	struct snd_soc_codec *codec = mbhc->codec;
 
+	/*
+	 * Do not disable micbias if recording is going on or
+	 * headset is inserted on the other side of the extn
+	 * cable. If headset has been detected current source
+	 * needs to be kept enabled for button detection to work.
+	 * If the accessory type is invalid or unsupported, we
+	 * dont need to enable either of them.
+	 */
 	if (det_extn_cable_en && mbhc->is_extn_cable &&
 		mbhc->mbhc_cb && mbhc->mbhc_cb->extn_use_mb &&
 		mbhc->mbhc_cb->extn_use_mb(codec)) {
@@ -1209,6 +1279,13 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 	mbhc = container_of(work, struct wcd_mbhc, correct_plug_swch);
 	codec = mbhc->codec;
 
+	/*
+	 * Enable micbias/pullup for detection in correct work.
+	 * This work will get scheduled from detect_plug_type which
+	 * will already request for pullup/micbias. If the pullup/micbias
+	 * is handled with ref-counts by individual codec drivers, there is
+	 * no need to enabale micbias/pullup here
+	 */
 
 	wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
 
@@ -1218,8 +1295,12 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		goto correct_plug_type;
 	}
 
-	
+	/* Enable HW FSM */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 1);
+	/*
+	 * Check for any button press interrupts before starting 3-sec
+	 * loop.
+	 */
 	rc = wait_for_completion_timeout(&mbhc->btn_press_compl,
 			msecs_to_jiffies(WCD_MBHC_BTN_PRESS_COMPL_TIMEOUT_MS));
 
@@ -1266,11 +1347,11 @@ correct_plug_type:
 			wcd_cancel_btn_work(mbhc);
 			mbhc->btn_press_intr = false;
 		}
-		
+		/* Toggle FSM */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 1);
 
-		
+		/* allow sometime and re-check stop requested again */
 		msleep(20);
 		if (mbhc->hs_detect_work_stop) {
 			pr_debug("%s: stop requested: %d\n", __func__,
@@ -1285,6 +1366,10 @@ correct_plug_type:
 		if (mbhc->mbhc_cb->hph_pa_on_status)
 			is_pa_on = mbhc->mbhc_cb->hph_pa_on_status(codec);
 
+		/*
+		 * instead of hogging system by contineous polling, wait for
+		 * sometime and re-check stop request again.
+		 */
 		msleep(180);
 		if (mbhc->swap_detect) { 
 			if ((!hs_comp_res) && (!is_pa_on)) {
@@ -1417,6 +1502,7 @@ exit:
 	pr_debug("%s: leave\n", __func__);
 }
 
+/* called under codec_resource_lock acquisition */
 static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
@@ -1460,7 +1546,7 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 		}
 	} 
 
-	
+	/* Re-initialize button press completion object */
 	reinit_completion(&mbhc->btn_press_compl);
 	wcd_schedule_hs_detect_plug(mbhc, &mbhc->correct_plug_swch);
 	pr_debug("%s: leave\n", __func__);
@@ -1478,13 +1564,13 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 
 	mbhc->in_swch_irq_handler = true;
 
-	
+	/* cancel pending button press */
 	if (wcd_cancel_btn_work(mbhc))
 		pr_debug("%s: button press is canceled\n", __func__);
 
 	WCD_MBHC_REG_READ(WCD_MBHC_MECH_DETECTION_TYPE, detection_type);
 
-	
+	/* Set the detection type appropriately */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
 				 !detection_type);
 
@@ -1498,7 +1584,7 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 
 	if ((mbhc->current_plug == MBHC_PLUG_TYPE_NONE) &&
 	    detection_type) {
-		
+		/* Make sure MASTER_BIAS_CTL is enabled */
 		mbhc->mbhc_cb->mbhc_bias(codec, true);
 
 		if (mbhc->mbhc_cb->mbhc_common_micb_ctrl)
@@ -1507,24 +1593,28 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 
 		if (!mbhc->mbhc_cfg->hs_ext_micbias &&
 		     mbhc->mbhc_cb->micb_internal)
+			/*
+			 * Enable Tx2 RBias if the headset
+			 * is using internal micbias
+			 */
 			mbhc->mbhc_cb->micb_internal(codec, 1, true);
 
-		
+		/* Remove micbias pulldown */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 0);
-		
+		/* Apply trim if needed on the device */
 		if (mbhc->mbhc_cb->trim_btn_reg)
 			mbhc->mbhc_cb->trim_btn_reg(codec);
-		
+		/* Enable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(codec, true);
 		mbhc->btn_press_intr = false;
 		wcd_mbhc_detect_plug_type(mbhc);
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
-		
+		/* Disable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(codec, false);
-		
+		/* Disable HW FSM */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 0);
 		if (mbhc->mbhc_cb->mbhc_common_micb_ctrl)
@@ -1542,11 +1632,11 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 		} else if (mbhc->current_plug == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
 			wcd_mbhc_report_plug(mbhc, 0, SND_JACK_UNSUPPORTED);
 		} else if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET) {
-			
+			/* make sure to turn off Rbias */
 			if (mbhc->mbhc_cb->micb_internal)
 				mbhc->mbhc_cb->micb_internal(codec, 1, false);
 
-			
+			/* Pulldown micbias */
 			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_PULLDOWN_CTRL, 1);
 			wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_REM,
 					     false);
@@ -1568,10 +1658,10 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 			wcd_mbhc_report_plug(mbhc, 0, SND_JACK_LINEOUT);
 		}
 	} else if (!detection_type) {
-		
+		/* Disable external voltage source to micbias if present */
 		if (mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(codec, false);
-		
+		/* Disable HW FSM */
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 0);
 	}
@@ -1591,7 +1681,7 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 		pr_warn("%s: failed to hold suspend\n", __func__);
 		r = IRQ_NONE;
 	} else {
-		
+		/* Call handler */
 		wcd_mbhc_swch_irq_handler(mbhc);
 		mbhc->mbhc_cb->lock_sleep(mbhc, false);
 	}
@@ -1666,7 +1756,7 @@ static irqreturn_t wcd_mbhc_hs_ins_irq(int irq, void *data)
 	pr_info("%s: detection_type %d, elect_result %x\n", __func__,
 				detection_type, elect_result); 
 	if (detection_type) {
-		
+		/* check if both Left and MIC Schmitt triggers are triggered */
 		WCD_MBHC_REG_READ(WCD_MBHC_HPHL_SCHMT_RESULT, hphl_sch);
 		WCD_MBHC_REG_READ(WCD_MBHC_MIC_SCHMT_RESULT, mic_sch);
 		if (hphl_sch && mic_sch) {
@@ -1706,6 +1796,10 @@ static irqreturn_t wcd_mbhc_hs_ins_irq(int irq, void *data)
 	return IRQ_HANDLED;
 
 determine_plug:
+	/*
+	 * Disable HPHL trigger and MIC Schmitt triggers.
+	 * Setup for insertion detection.
+	 */
 	pr_debug("%s: Disable insertion interrupt\n", __func__);
 	wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_INS,
 			     false);
@@ -1741,6 +1835,10 @@ static irqreturn_t wcd_mbhc_hs_rem_irq(int irq, void *data)
 		  msecs_to_jiffies(WCD_FAKE_REMOVAL_MIN_PERIOD_MS);
 	do {
 		retry++;
+		/*
+		 * read the result register every 10ms to look for
+		 * any change in HS_COMP_RESULT bit
+		 */
 		usleep_range(10000, 10100);
 		WCD_MBHC_REG_READ(WCD_MBHC_HS_COMP_RESULT, hs_comp_result);
 		pr_debug("%s: Check result reg for fake removal: hs_comp_res %x\n",
@@ -1766,6 +1864,10 @@ static irqreturn_t wcd_mbhc_hs_rem_irq(int irq, void *data)
 
 	if (removed) {
 		if (!(hphl_sch && mic_sch && hs_comp_result)) {
+			/*
+			 * extension cable is still plugged in
+			 * report it as LINEOUT device
+			 */
 			goto report_unplug;
 		} else {
 			if (!mic_sch) {
@@ -1779,6 +1881,10 @@ static irqreturn_t wcd_mbhc_hs_rem_irq(int irq, void *data)
 					 __func__, hphl_trigerred);
 			}
 			if (mic_trigerred && hphl_trigerred) {
+				/*
+				 * extension cable is still plugged in
+				 * report it as LINEOUT device
+				 */
 				goto report_unplug;
 			}
 		}
@@ -1789,10 +1895,10 @@ static irqreturn_t wcd_mbhc_hs_rem_irq(int irq, void *data)
 
 report_unplug:
 
-	
+	/* cancel pending button press */
 	if (wcd_cancel_btn_work(mbhc))
 		pr_debug("%s: button press is canceled\n", __func__);
-	
+	/* cancel correct work function */
 	wcd_cancel_hs_detect_plug(mbhc, &mbhc->correct_plug_swch);
 
 	pr_info("%s: Report extension cable\n", __func__);
@@ -1800,14 +1906,18 @@ report_unplug:
 	if (test_bit(WCD_MBHC_EVENT_PA_HPHL,
 		&mbhc->event_state))
 		wcd_mbhc_set_and_turnoff_hph_padac(mbhc);
+	/*
+	 * Disable HPHL trigger and MIC Schmitt triggers.
+	 * Setup for insertion detection.
+	 */
 	wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_REM,
 			     false);
 	wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_NONE);
-	
+	/* Disable HW FSM */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_SCHMT_ISRC, 3);
 
-	
+	/* Set the detection type appropriately */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_DETECTION_TYPE, 1);
 	wcd_mbhc_hs_elec_irq(mbhc, WCD_MBHC_ELEC_HS_INS,
 			     true);
@@ -1853,6 +1963,10 @@ static bool wcd_mbhc_fw_validate(const void *data, size_t size)
 	if (fw.size < WCD_MBHC_CAL_MIN_SIZE)
 		return false;
 
+	/*
+	 * Previous check guarantees that there is enough fw data up
+	 * to num_btn
+	 */
 	btn_cfg = WCD_MBHC_CAL_BTN_DET_PTR(fw.data);
 	cfg_offset = (u32) ((void *) btn_cfg - (void *) fw.data);
 	if (fw.size < (cfg_offset + WCD_MBHC_CAL_BTN_SZ(btn_cfg)))
@@ -1870,7 +1984,7 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	pr_info("%s: enter\n", __func__); 
 	complete(&mbhc->btn_press_compl);
 	WCD_MBHC_RSC_LOCK(mbhc);
-	
+	/* send event to sw intr handler*/
 	mbhc->is_btn_press = true;
 	wcd_cancel_btn_work(mbhc);
 	if (wcd_swch_level_remove(mbhc)) {
@@ -1886,7 +2000,7 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 		goto done;
 	}
 
-	
+	/* If switch interrupt already kicked in, ignore button press */
 	if (mbhc->in_swch_irq_handler) {
 		pr_info("%s: Swtich level changed, ignore button press\n",
 			 __func__); 
@@ -1934,6 +2048,11 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 		goto exit;
 	}
 
+	/*
+	 * If current plug is headphone then there is no chance to
+	 * get btn release interrupt, so connected cable should be
+	 * headset not headphone.
+	 */
 	if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
 		pr_info("%s: report headset due to current plug is headphone then there is no change to get btn release irq\n", __func__); 
 		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADSET);
@@ -2042,7 +2161,7 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 
-	
+	/* enable HS detection */
 	if (mbhc->mbhc_cb->hph_pull_up_control)
 		mbhc->mbhc_cb->hph_pull_up_control(codec, I_DEFAULT);
 	else
@@ -2065,16 +2184,16 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 	
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);
 
-	
+	/* Enable micbias ramp */
 	if (mbhc->mbhc_cb->mbhc_micb_ramp_control)
 		mbhc->mbhc_cb->mbhc_micb_ramp_control(codec, true);
-	
+	/* enable bias */
 	mbhc->mbhc_cb->mbhc_bias(codec, true);
-	
+	/* enable MBHC clock */
 	if (mbhc->mbhc_cb->clk_setup)
 		mbhc->mbhc_cb->clk_setup(codec, true);
 
-	
+	/* program HS_VREF value */
 	wcd_program_hs_vref(mbhc);
 
 	wcd_program_btn_threshold(mbhc, false);
@@ -2112,6 +2231,11 @@ static void wcd_mbhc_fw_read(struct work_struct *work)
 		if (!fw_data)
 			ret = request_firmware(&fw, "wcd9320/wcd9320_mbhc.bin",
 				       codec->dev);
+		/*
+		 * if request_firmware and hwdep cal both fail then
+		 * sleep for 4sec for the userspace to send data to kernel
+		 * retry for few times before bailing out
+		 */
 		if ((ret != 0) && !fw_data) {
 			usleep_range(FW_READ_TIMEOUT, FW_READ_TIMEOUT +
 					WCD_MBHC_USLEEP_RANGE_MARGIN_US);
@@ -2231,10 +2355,10 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc,
 	int rc = 0;
 
 	pr_debug("%s: enter\n", __func__);
-	
+	/* update the mbhc config */
 	mbhc->mbhc_cfg = mbhc_cfg;
 
-	
+	/* Set btn key code */
 	if ((!mbhc->is_btn_already_regd) && wcd_mbhc_set_keycode(mbhc))
 		pr_err("Set btn key code error!!!\n");
 
@@ -2280,6 +2404,11 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 }
 EXPORT_SYMBOL(wcd_mbhc_stop);
 
+/*
+ * wcd_mbhc_init : initialize MBHC internal structures.
+ *
+ * NOTE: mbhc->mbhc_cfg is not YET configure so shouldn't be used
+ */
 int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		      const struct wcd_mbhc_cb *mbhc_cb,
 		      const struct wcd_mbhc_intr *mbhc_cdc_intr_ids,
@@ -2369,7 +2498,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		return -EINVAL;
 	}
 
-	
+	/* Check if IRQ and other required callbacks are defined or not */
 	if (!mbhc_cb || !mbhc_cb->request_irq || !mbhc_cb->irq_control ||
 	    !mbhc_cb->free_irq || !mbhc_cb->map_btn_code_to_num ||
 	    !mbhc_cb->lock_sleep || !mbhc_cb->mbhc_bias ||
@@ -2414,7 +2543,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	mutex_init(&mbhc->hphl_pa_lock);
 	mutex_init(&mbhc->hphr_pa_lock);
 
-	
+	/* Register event notifier */
 	mbhc->nblock.notifier_call = wcd_event_notify;
 	if (mbhc->mbhc_cb->register_notifier) {
 		ret = mbhc->mbhc_cb->register_notifier(codec, &mbhc->nblock,
