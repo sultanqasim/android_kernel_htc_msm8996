@@ -34,6 +34,30 @@
 
 static struct i2c_client *this_client;
 
+static inline char nibble2hex(char nibble) {
+	nibble &= 0x0F;
+	if (nibble <= 9) return nibble + 48;
+	else return nibble + 55;
+}
+
+static void printk_hex(const char *prefix, const char *data, int length) {
+	char buff[255*3 + 10];
+	int i;
+
+	if (length < 0) return;
+	if (length > 255) length = 255;
+
+	buff[0] = '[';
+	for (i = 0; i < length; i++) {
+		buff[i*3 + 1] = nibble2hex(data[i]);
+		buff[i*3 + 2] = nibble2hex(data[i] >> 4);
+		buff[i*3 + 3] = ' ';
+	}
+	buff[i*3 + 1] = ']';
+	buff[i*3 + 2] = 0;
+	printk("%s: %s\n", prefix, buff);
+}
+
 static int tfa_i2c_write(char *txdata, int length)
 {
 	int rc;
@@ -49,6 +73,8 @@ static int tfa_i2c_write(char *txdata, int length)
 	rc = i2c_transfer(this_client->adapter, msg, 1);
 	if (rc < 0)
 		pr_err("%s: transfer error %d\n", __func__, rc);
+	else
+		printk_hex(__func__, txdata, length);
 
 	return rc;
 
@@ -92,8 +118,10 @@ static int tfa_i2c_read(char *rxdata, int length)
 	rc = i2c_transfer(this_client->adapter, msgs, 1);
 	if (rc < 0)
 		pr_err("%s: transfer i2c error %d\n", __func__, rc);
-	else
+	else {
 		rc = length;
+		printk_hex(__func__, rxdata, length);
+	}
 
 	return rc;
 }
