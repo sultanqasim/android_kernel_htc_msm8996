@@ -482,6 +482,11 @@ void __jbd2_journal_clean_checkpoint_list(journal_t *journal, bool destroy)
 		next_transaction = transaction->t_cpnext;
 		ret = journal_clean_one_cp_list(transaction->t_checkpoint_list,
 						destroy);
+		/*
+		 * This function only frees up some memory if possible so we
+		 * dont have an obligation to finish processing. Bail out if
+		 * preemption requested:
+		 */
 		if (need_resched())
 			return;
 		if (ret)
@@ -505,8 +510,16 @@ void __jbd2_journal_clean_checkpoint_list(journal_t *journal, bool destroy)
 	} while (transaction != last_transaction);
 }
 
+/*
+ * Remove buffers from all checkpoint lists as journal is aborted and we just
+ * need to free memory
+ */
 void jbd2_journal_destroy_checkpoint(journal_t *journal)
 {
+	/*
+	 * We loop because __jbd2_journal_clean_checkpoint_list() may abort
+	 * early due to a need of rescheduling.
+	 */
 	while (1) {
 		spin_lock(&journal->j_list_lock);
 		if (!journal->j_checkpoint_transactions) {

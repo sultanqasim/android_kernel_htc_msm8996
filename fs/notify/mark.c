@@ -331,6 +331,15 @@ void fsnotify_clear_marks_by_group_flags(struct fsnotify_group *group,
 	struct fsnotify_mark *lmark, *mark;
 	LIST_HEAD(to_free);
 
+	/*
+	 * We have to be really careful here. Anytime we drop mark_mutex, e.g.
+	 * fsnotify_clear_marks_by_inode() can come and free marks. Even in our
+	 * to_free list so we have to use mark_mutex even when accessing that
+	 * list. And freeing mark requires us to drop mark_mutex. So we can
+	 * reliably free only the first mark in the list. That's why we first
+	 * move marks to free to to_free list in one go and then free marks in
+	 * to_free list one by one.
+	 */
 	mutex_lock_nested(&group->mark_mutex, SINGLE_DEPTH_NESTING);
 	list_for_each_entry_safe(mark, lmark, &group->marks_list, g_list) {
 		if (mark->flags & flags)

@@ -4814,7 +4814,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 	if (mode & FALLOC_FL_KEEP_SIZE)
 		flags |= EXT4_GET_BLOCKS_KEEP_SIZE;
 
-	
+	/* Preallocate the range including the unaligned edges */
 	if (partial_begin || partial_end) {
 		ret = ext4_alloc_file_blocks(file,
 				round_down(offset, 1 << blkbits) >> blkbits,
@@ -4826,7 +4826,7 @@ static long ext4_zero_range(struct file *file, loff_t offset,
 
 	}
 
-	
+	/* Zero range excluding the unaligned edges */
 	if (max_blocks > 0) {
 		flags |= (EXT4_GET_BLOCKS_CONVERT_UNWRITTEN |
 			  EXT4_EX_NOCACHE);
