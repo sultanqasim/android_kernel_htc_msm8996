@@ -1955,7 +1955,7 @@ static void get_brightness_mapping_table(struct device_node *node)
 		return;
 	}
     LED_INFO("%s, vk-pwm-array table_level_num: %d\n", __func__, table_level_num);
-	use_color_table = 1;
+	/* use_color_table = 1; */
 	memcpy(color_table, prop->value, table_level_num);
 
 	cmdline = kstrdup(saved_command_line, GFP_KERNEL);
