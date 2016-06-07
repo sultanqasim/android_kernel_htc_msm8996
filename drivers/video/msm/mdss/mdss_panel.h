@@ -542,6 +542,11 @@ struct htc_backlight1_table {
 	u16 *bl_data;
 };
 
+enum {
+	PANEL_POWER_CTRL_DEFAULT,
+	PANEL_POWER_CTRL_HX8396C2,
+};
+
 struct mdss_panel_info {
 	u32 xres;
 	u32 yres;
@@ -677,6 +682,7 @@ struct mdss_panel_info {
 	
 	struct htc_backlight1_table brt_bl_table;
 	int camera_blk;
+	int power_ctrl;
 };
 
 struct mdss_panel_timing {

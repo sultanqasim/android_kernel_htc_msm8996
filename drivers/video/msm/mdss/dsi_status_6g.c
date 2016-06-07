@@ -43,9 +43,13 @@ static bool mdss_check_te_status(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	 */
 	ret = !atomic_read(&ctrl_pdata->te_irq_ready);
 	if (ret) {
+		pr_info("%s: TE IRQ line not enabled yet\n", __func__);
+		msleep(50);
+		ret = atomic_read(&ctrl_pdata->te_irq_ready);
+	}
+	if (ret) {
 		schedule_delayed_work(&pstatus_data->check_status,
 			msecs_to_jiffies(interval));
-		pr_debug("%s: TE IRQ line not enabled yet\n", __func__);
 	}
 
 	return ret;

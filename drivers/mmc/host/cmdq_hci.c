@@ -407,8 +407,6 @@ static int cmdq_enable(struct mmc_host *mmc)
 	mb();
 
 	cq_host->enabled = true;
-	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
-		__func__, cq_host->enabled);
 	mmc_host_clr_cq_disable(mmc);
 
 	if (cq_host->ops->set_block_size)
@@ -442,8 +440,6 @@ static void cmdq_disable_nosync(struct mmc_host *mmc, bool soft)
 		cq_host->ops->enhanced_strobe_mask(mmc, false);
 
 	cq_host->enabled = false;
-	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
-		__func__, cq_host->enabled);
 	mmc_host_set_cq_disable(mmc);
 }
 
@@ -499,8 +495,6 @@ static void cmdq_reset(struct mmc_host *mmc, bool soft)
 	cmdq_writel(cq_host, cqcfg, CQCFG);
 	cmdq_runtime_pm_put(cq_host);
 	cq_host->enabled = true;
-	pr_err("%s: %s: cq_host->enabled: %d\n", mmc_hostname(mmc),
-		__func__, cq_host->enabled);
 	mmc_host_clr_cq_disable(mmc);
 }
 
@@ -699,7 +693,6 @@ static int cmdq_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		pr_err("%s: CMDQ host not enabled yet !!!\n",
 		       mmc_hostname(mmc));
 		err = -EINVAL;
-		BUG_ON(1);
 		goto out;
 	}
 
