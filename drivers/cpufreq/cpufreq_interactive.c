@@ -37,12 +37,12 @@
 struct cpufreq_interactive_policyinfo {
 	struct timer_list policy_timer;
 	struct timer_list policy_slack_timer;
-	spinlock_t load_lock; /* protects load tracking stat */
+	spinlock_t load_lock; 
 	u64 last_evaluated_jiffy;
 	struct cpufreq_policy *policy;
-	struct cpufreq_policy p_nolim; /* policy copy with no limits */
+	struct cpufreq_policy p_nolim; 
 	struct cpufreq_frequency_table *freq_table;
-	spinlock_t target_freq_lock; /*protects target freq */
+	spinlock_t target_freq_lock; 
 	unsigned int target_freq;
 	unsigned int floor_freq;
 	unsigned int min_freq;
@@ -56,7 +56,6 @@ struct cpufreq_interactive_policyinfo {
 	struct sched_load *sl;
 };
 
-/* Protected by per-policy load_lock */
 struct cpufreq_interactive_cpuinfo {
 	u64 time_in_idle;
 	u64 time_in_idle_timestamp;
@@ -65,10 +64,10 @@ struct cpufreq_interactive_cpuinfo {
 	unsigned int loadadjfreq;
 };
 
+
 static DEFINE_PER_CPU(struct cpufreq_interactive_policyinfo *, polinfo);
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
-/* realtime thread handles frequency scaling */
 static struct task_struct *speedchange_task;
 static cpumask_t speedchange_cpumask;
 static spinlock_t speedchange_cpumask_lock;
@@ -79,7 +78,6 @@ static int migration_register_count;
 static struct mutex sched_lock;
 static cpumask_t controlled_cpus;
 
-/* Target load.  Lower values result in higher CPU speeds. */
 #define DEFAULT_TARGET_LOAD 90
 static unsigned int default_target_loads[] = {DEFAULT_TARGET_LOAD};
 
@@ -90,78 +88,53 @@ static unsigned int default_above_hispeed_delay[] = {
 
 struct cpufreq_interactive_tunables {
 	int usage_count;
-	/* Hi speed to bump to from lo speed when load burst (default max) */
+	
 	unsigned int hispeed_freq;
-	/* Go to hi speed when CPU load at or above this value. */
+	
 #define DEFAULT_GO_HISPEED_LOAD 99
 	unsigned long go_hispeed_load;
-	/* Target load. Lower values result in higher CPU speeds. */
+	
 	spinlock_t target_loads_lock;
 	unsigned int *target_loads;
 	int ntarget_loads;
-	/*
-	 * The minimum amount of time to spend at a frequency before we can ramp
-	 * down.
-	 */
 #define DEFAULT_MIN_SAMPLE_TIME (80 * USEC_PER_MSEC)
 	unsigned long min_sample_time;
-	/*
-	 * The sample rate of the timer used to increase frequency
-	 */
 	unsigned long timer_rate;
-	/*
-	 * Wait this long before raising speed above hispeed, by default a
-	 * single timer interval.
-	 */
 	spinlock_t above_hispeed_delay_lock;
 	unsigned int *above_hispeed_delay;
 	int nabove_hispeed_delay;
-	/* Non-zero means indefinite speed boost active */
+	
 	int boost_val;
-	/* Duration of a boot pulse in usecs */
+	
 	int boostpulse_duration_val;
-	/* End time of boost pulse in ktime converted to usecs */
+	
 	u64 boostpulse_endtime;
 	bool boosted;
-	/*
-	 * Max additional time to wait in idle, beyond timer_rate, at speeds
-	 * above minimum before wakeup to reduce speed, or -1 if unnecessary.
-	 */
 #define DEFAULT_TIMER_SLACK (4 * DEFAULT_TIMER_RATE)
 	int timer_slack_val;
 	bool io_is_busy;
 
-	/* scheduler input related flags */
+	
 	bool use_sched_load;
 	bool use_migration_notif;
 
-	/*
-	 * Whether to align timer windows across all CPUs. When
-	 * use_sched_load is true, this flag is ignored and windows
-	 * will always be aligned.
-	 */
 	bool align_windows;
 
-	/*
-	 * Stay at max freq for at least max_freq_hysteresis before dropping
-	 * frequency.
-	 */
 	unsigned int max_freq_hysteresis;
 
-	/* Ignore hispeed_freq and above_hispeed_delay for notification */
+	
 	bool ignore_hispeed_on_notif;
 
-	/* Ignore min_sample_time for notification */
+	
 	bool fast_ramp_down;
+	int new_task_ratio;
 };
 
-/* For cases where we have single governor instance for system */
 static struct cpufreq_interactive_tunables *common_tunables;
 static struct cpufreq_interactive_tunables *cached_common_tunables;
 
 static struct attribute_group *get_sysfs_attr(void);
 
-/* Round to starting jiffy of next evaluation window */
 static u64 round_to_nw_start(u64 jif,
 			     struct cpufreq_interactive_tunables *tunables)
 {
@@ -224,10 +197,6 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu,
 	spin_unlock_irqrestore(&ppol->load_lock, flags);
 }
 
-/* The caller shall take enable_sem write semaphore to avoid any timer race.
- * The policy_timer and policy_slack_timer must be deactivated when calling
- * this function.
- */
 static void cpufreq_interactive_timer_start(
 	struct cpufreq_interactive_tunables *tunables, int cpu)
 {
@@ -314,11 +283,6 @@ u32 get_freq_max_load(int cpu, unsigned int freq)
 	return freq_to_targetload(cached_common_tunables, freq);
 }
 
-/*
- * If increasing frequencies never map to a lower target load then
- * choose_freq() will find the minimum frequency that does not exceed its
- * target load given the current load.
- */
 static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 		unsigned int loadadjfreq)
 {
@@ -334,10 +298,6 @@ static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 		prevfreq = freq;
 		tl = freq_to_targetload(pcpu->policy->governor_data, freq);
 
-		/*
-		 * Find the lowest frequency where the computed load is less
-		 * than or equal to the target load.
-		 */
 
 		if (cpufreq_frequency_table_target(
 			    &pcpu->p_nolim, pcpu->freq_table, loadadjfreq / tl,
@@ -346,14 +306,10 @@ static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 		freq = pcpu->freq_table[index].frequency;
 
 		if (freq > prevfreq) {
-			/* The previous frequency is too low. */
+			
 			freqmin = prevfreq;
 
 			if (freq >= freqmax) {
-				/*
-				 * Find the highest frequency that is less
-				 * than freqmax.
-				 */
 				if (cpufreq_frequency_table_target(
 					    &pcpu->p_nolim, pcpu->freq_table,
 					    freqmax - 1, CPUFREQ_RELATION_H,
@@ -362,25 +318,15 @@ static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 				freq = pcpu->freq_table[index].frequency;
 
 				if (freq == freqmin) {
-					/*
-					 * The first frequency below freqmax
-					 * has already been found to be too
-					 * low.  freqmax is the lowest speed
-					 * we found that is fast enough.
-					 */
 					freq = freqmax;
 					break;
 				}
 			}
 		} else if (freq < prevfreq) {
-			/* The previous frequency is high enough. */
+			
 			freqmax = prevfreq;
 
 			if (freq <= freqmin) {
-				/*
-				 * Find the lowest frequency that is higher
-				 * than freqmin.
-				 */
 				if (cpufreq_frequency_table_target(
 					    &pcpu->p_nolim, pcpu->freq_table,
 					    freqmin + 1, CPUFREQ_RELATION_L,
@@ -388,17 +334,12 @@ static unsigned int choose_freq(struct cpufreq_interactive_policyinfo *pcpu,
 					break;
 				freq = pcpu->freq_table[index].frequency;
 
-				/*
-				 * If freqmax is the first frequency above
-				 * freqmin then we have already found that
-				 * this speed is fast enough.
-				 */
 				if (freq == freqmax)
 					break;
 			}
 		}
 
-		/* If same frequency chosen as previous then done. */
+		
 	} while (freq != prevfreq);
 
 	return freq;
@@ -504,7 +445,7 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 		trace_cpufreq_interactive_cpuload(i, cpu_load, new_load_pct);
 
 		if (cpu_load >= tunables->go_hispeed_load &&
-		    new_load_pct >= NEW_TASK_RATIO) {
+		    (tunables->new_task_ratio > 0 && new_load_pct >= tunables->new_task_ratio)) {
 			skip_hispeed_logic = true;
 			jump_to_max = true;
 		}
@@ -570,10 +511,6 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 
 	new_freq = ppol->freq_table[index].frequency;
 
-	/*
-	 * Do not scale below floor_freq unless we have been at or above the
-	 * floor frequency for the minimum sample time since last validated.
-	 */
 	if (!skip_min_sample_time && new_freq < ppol->floor_freq) {
 		if (now - ppol->floor_validate_time <
 				tunables->min_sample_time) {
@@ -585,16 +522,6 @@ static void __cpufreq_interactive_timer(unsigned long data, bool is_notif)
 		}
 	}
 
-	/*
-	 * Update the timestamp for checking whether speed has been held at
-	 * or above the selected frequency for a minimum of min_sample_time,
-	 * if not boosted to hispeed_freq.  If boosted to hispeed_freq then we
-	 * allow the speed to drop as soon as the boostpulse duration expires
-	 * (or the indefinite boost is turned off). If policy->max is restored
-	 * for max_freq_hysteresis, don't extend the timestamp. Otherwise, it
-	 * could incorrectly extended the duration of max_freq_hysteresis by
-	 * min_sample_time.
-	 */
 
 	if ((!tunables->boosted || new_freq > tunables->hispeed_freq)
 	    && !policy_max_fast_restore) {
@@ -628,13 +555,6 @@ rearm:
 	if (!timer_pending(&ppol->policy_timer))
 		cpufreq_interactive_timer_resched(data, false);
 
-	/*
-	 * Send govinfo notification.
-	 * Govinfo notification could potentially wake up another thread
-	 * managed by its clients. Thread wakeups might trigger a load
-	 * change callback that executes this function again. Therefore
-	 * no spinlock could be held when sending the notification.
-	 */
 	for_each_cpu(i, ppol->policy->cpus) {
 		pcpu = &per_cpu(cpuinfo, i);
 		govinfo.cpu = i;
@@ -729,10 +649,6 @@ static void cpufreq_interactive_boost(struct cpufreq_interactive_tunables *tunab
 			anyboost = 1;
 		}
 
-		/*
-		 * Set floor freq and (re)start timer for when last
-		 * validated.
-		 */
 
 		ppol->floor_freq = tunables->hispeed_freq;
 		ppol->floor_validate_time = ktime_to_us(ktime_get());
@@ -1011,6 +927,24 @@ static ssize_t store_go_hispeed_load(struct cpufreq_interactive_tunables
 	return count;
 }
 
+static ssize_t show_new_task_ratio(struct cpufreq_interactive_tunables
+		*tunables, char *buf)
+{
+	return sprintf(buf, "%d\n", tunables->new_task_ratio);
+}
+
+static ssize_t store_new_task_ratio(struct cpufreq_interactive_tunables
+		*tunables, const char *buf, size_t count)
+{
+	int ret;
+	int val;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+	tunables->new_task_ratio = val;
+	return count;
+}
 static ssize_t show_min_sample_time(struct cpufreq_interactive_tunables
 		*tunables, char *buf)
 {
@@ -1332,11 +1266,6 @@ static ssize_t store_use_migration_notif(
 	return count;
 }
 
-/*
- * Create show/store routines
- * - sys: One governor instance for complete SYSTEM
- * - pol: One governor instance per struct cpufreq_policy
- */
 #define show_gov_pol_sys(file_name)					\
 static ssize_t show_##file_name##_gov_sys				\
 (struct kobject *kobj, struct attribute *attr, char *buf)		\
@@ -1385,6 +1314,7 @@ show_store_gov_pol_sys(max_freq_hysteresis);
 show_store_gov_pol_sys(align_windows);
 show_store_gov_pol_sys(ignore_hispeed_on_notif);
 show_store_gov_pol_sys(fast_ramp_down);
+show_store_gov_pol_sys(new_task_ratio);
 
 #define gov_sys_attr_rw(_name)						\
 static struct global_attr _name##_gov_sys =				\
@@ -1414,6 +1344,7 @@ gov_sys_pol_attr_rw(max_freq_hysteresis);
 gov_sys_pol_attr_rw(align_windows);
 gov_sys_pol_attr_rw(ignore_hispeed_on_notif);
 gov_sys_pol_attr_rw(fast_ramp_down);
+gov_sys_pol_attr_rw(new_task_ratio);
 
 static struct global_attr boostpulse_gov_sys =
 	__ATTR(boostpulse, 0200, NULL, store_boostpulse_gov_sys);
@@ -1421,7 +1352,6 @@ static struct global_attr boostpulse_gov_sys =
 static struct freq_attr boostpulse_gov_pol =
 	__ATTR(boostpulse, 0200, NULL, store_boostpulse_gov_pol);
 
-/* One Governor instance for entire system */
 static struct attribute *interactive_attributes_gov_sys[] = {
 	&target_loads_gov_sys.attr,
 	&above_hispeed_delay_gov_sys.attr,
@@ -1440,6 +1370,7 @@ static struct attribute *interactive_attributes_gov_sys[] = {
 	&align_windows_gov_sys.attr,
 	&ignore_hispeed_on_notif_gov_sys.attr,
 	&fast_ramp_down_gov_sys.attr,
+	&new_task_ratio_gov_sys.attr,
 	NULL,
 };
 
@@ -1448,7 +1379,6 @@ static struct attribute_group interactive_attr_group_gov_sys = {
 	.name = "interactive",
 };
 
-/* Per policy governor instance */
 static struct attribute *interactive_attributes_gov_pol[] = {
 	&target_loads_gov_pol.attr,
 	&above_hispeed_delay_gov_pol.attr,
@@ -1467,6 +1397,7 @@ static struct attribute *interactive_attributes_gov_pol[] = {
 	&align_windows_gov_pol.attr,
 	&ignore_hispeed_on_notif_gov_pol.attr,
 	&fast_ramp_down_gov_pol.attr,
+	&new_task_ratio_gov_pol.attr,
 	NULL,
 };
 
@@ -1506,6 +1437,7 @@ static struct cpufreq_interactive_tunables *alloc_tunable(
 	tunables->timer_rate = DEFAULT_TIMER_RATE;
 	tunables->boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
 	tunables->timer_slack_val = DEFAULT_TIMER_SLACK;
+	tunables->new_task_ratio = NEW_TASK_RATIO;
 
 	spin_lock_init(&tunables->target_loads_lock);
 	spin_lock_init(&tunables->above_hispeed_delay_lock);
@@ -1521,7 +1453,7 @@ static struct cpufreq_interactive_policyinfo *get_policyinfo(
 	int i;
 	struct sched_load *sl;
 
-	/* polinfo already allocated for policy, return */
+	
 	if (ppol)
 		return ppol;
 
@@ -1550,7 +1482,6 @@ static struct cpufreq_interactive_policyinfo *get_policyinfo(
 	return ppol;
 }
 
-/* This function is not multithread-safe. */
 static void free_policyinfo(int cpu)
 {
 	struct cpufreq_interactive_policyinfo *ppol = per_cpu(polinfo, cpu);
@@ -1770,14 +1701,14 @@ static int __init cpufreq_interactive_init(void)
 	sched_setscheduler_nocheck(speedchange_task, SCHED_FIFO, &param);
 	get_task_struct(speedchange_task);
 
-	/* NB: wake up so the thread does not look hung to the freezer */
+	
 	wake_up_process(speedchange_task);
 
 	return cpufreq_register_governor(&cpufreq_gov_interactive);
 }
 
 #ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE
-fs_initcall(cpufreq_interactive_init);
+arch_initcall(cpufreq_interactive_init);
 #else
 module_init(cpufreq_interactive_init);
 #endif

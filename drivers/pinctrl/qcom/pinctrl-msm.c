@@ -38,22 +38,6 @@
 #define PS_HOLD_OFFSET 0x820
 #define TLMM_EBI2_EMMC_GPIO_CFG 0x111000
 
-/**
- * struct msm_pinctrl - state for a pinctrl-msm device
- * @dev:            device handle.
- * @pctrl:          pinctrl handle.
- * @chip:           gpiochip handle.
- * @restart_nb:     restart notifier block.
- * @irq_chip_extn:  MPM extension of TLMM irqchip.
- * @irq:            parent irq for the TLMM irq_chip.
- * @lock:           Spinlock to protect register resources as well
- *                  as msm_pinctrl data structures.
- * @enabled_irqs:   Bitmap of currently enabled irqs.
- * @dual_edge_irqs: Bitmap of irqs that need sw emulated dual edge
- *                  detection.
- * @soc;            Reference to soc_data of platform specific data.
- * @regs:           Base address for the TLMM register map.
- */
 struct msm_pinctrl {
 	struct device *dev;
 	struct pinctrl_dev *pctrl;
@@ -255,7 +239,7 @@ static int msm_config_group_get(struct pinctrl_dev *pctldev,
 	val = readl(pctrl->regs + g->ctl_reg);
 	arg = (val >> bit) & mask;
 
-	/* Convert register value to pinconf value */
+	
 	switch (param) {
 	case PIN_CONFIG_BIAS_DISABLE:
 		arg = arg == MSM_NO_PULL;
@@ -273,7 +257,7 @@ static int msm_config_group_get(struct pinctrl_dev *pctldev,
 		arg = msm_regval_to_drive(arg);
 		break;
 	case PIN_CONFIG_OUTPUT:
-		/* Pin is not output */
+		
 		if (!arg)
 			return -EINVAL;
 
@@ -281,7 +265,7 @@ static int msm_config_group_get(struct pinctrl_dev *pctldev,
 		arg = !!(val & BIT(g->in_bit));
 		break;
 	case PIN_CONFIG_INPUT_ENABLE:
-		/* Pin is output */
+		
 		if (arg)
 			return -EINVAL;
 		arg = 1;
@@ -323,7 +307,7 @@ static int msm_config_group_set(struct pinctrl_dev *pctldev,
 		if (ret < 0)
 			return ret;
 
-		/* Convert pinconf values to register values */
+		
 		switch (param) {
 		case PIN_CONFIG_BIAS_DISABLE:
 			arg = MSM_NO_PULL;
@@ -338,14 +322,14 @@ static int msm_config_group_set(struct pinctrl_dev *pctldev,
 			arg = MSM_PULL_UP;
 			break;
 		case PIN_CONFIG_DRIVE_STRENGTH:
-			/* Check for invalid values */
+			
 			if (arg > 16 || arg < 2 || (arg % 2) != 0)
 				arg = -1;
 			else
 				arg = (arg / 2) - 1;
 			break;
 		case PIN_CONFIG_OUTPUT:
-			/* set output value */
+			
 			spin_lock_irqsave(&pctrl->lock, flags);
 			val = readl(pctrl->regs + g->io_reg);
 			if (arg)
@@ -355,11 +339,11 @@ static int msm_config_group_set(struct pinctrl_dev *pctldev,
 			writel(val, pctrl->regs + g->io_reg);
 			spin_unlock_irqrestore(&pctrl->lock, flags);
 
-			/* enable output */
+			
 			arg = 1;
 			break;
 		case PIN_CONFIG_INPUT_ENABLE:
-			/* disable output */
+			
 			arg = 0;
 			break;
 		default:
@@ -368,7 +352,7 @@ static int msm_config_group_set(struct pinctrl_dev *pctldev,
 			return -EINVAL;
 		}
 
-		/* Range-check user-supplied value */
+		
 		if (arg & ~mask) {
 			dev_err(pctrl->dev, "config %x: %x is invalid\n", param, arg);
 			return -EINVAL;
@@ -491,6 +475,121 @@ static void msm_gpio_free(struct gpio_chip *chip, unsigned offset)
 	return pinctrl_free_gpio(gpio);
 }
 
+#ifdef CONFIG_HTC_POWER_DEBUG
+struct gpio_chip *g_chip;
+int msm_dump_gpios(struct seq_file *m, int curr_len, char *gpio_buffer)
+{
+	const struct msm_pingroup *g;
+	struct msm_pinctrl *pctrl = container_of(g_chip, struct msm_pinctrl, chip);
+	unsigned func;
+	unsigned int i, len;
+	int is_out, drive, pull, io_value, intr_en, intr_target;
+	u32 ctl_reg, io_reg, intr_cfg_reg;
+	char *title_msg = "------------ MSM GPIO -------------";
+	char list_gpio[100];
+
+    if (m) {
+        seq_printf(m, "%s\n", title_msg);
+    } else {
+        pr_info("%s\n", title_msg);
+        curr_len += sprintf(gpio_buffer + curr_len,
+        "%s\n", title_msg);
+    }
+
+    for (i = 0; i < g_chip->ngpio; i++) {
+        memset(list_gpio, 0 , sizeof(list_gpio));
+        len = 0;
+
+		g = &pctrl->soc->groups[i];
+		ctl_reg = readl(pctrl->regs + g->ctl_reg);
+		io_reg = readl(pctrl->regs + g->io_reg);
+		intr_cfg_reg = readl(pctrl->regs + g->intr_cfg_reg);
+		is_out = !!(ctl_reg & BIT(g->oe_bit));
+		func = (ctl_reg >> g->mux_bit) & 7;
+		drive = (ctl_reg >> g->drv_bit) & 7;
+		pull = (ctl_reg >> g->pull_bit) & 3;
+		intr_en = intr_cfg_reg & 0x1;
+		intr_target = (ctl_reg >> g->intr_target_bit) & 3;
+
+        len += sprintf(list_gpio + len, "GPIO[%3d]: ", i);
+
+        len += sprintf(list_gpio + len, "[FS]0x%x, ", func);
+
+        if (is_out) {
+			io_value = (io_reg >> 1) & 0x1;
+            len += sprintf(list_gpio + len, "[DIR]OUT, [VAL]%s ", io_value ? "HIGH" : " LOW");
+        } else {
+			io_value = io_reg & 0x1;
+            len += sprintf(list_gpio + len, "[DIR] IN, [VAL]%s ", io_value ? "HIGH" : " LOW");
+        }
+
+        switch (pull) {
+	        case 0x0:
+	                len += sprintf(list_gpio + len, "[PULL]NO, ");
+	                break;
+	        case 0x1:
+	                len += sprintf(list_gpio + len, "[PULL]PD, ");
+	                break;
+	        case 0x2:
+	                len += sprintf(list_gpio + len, "[PULL]KP, ");
+	                break;
+	        case 0x3:
+	                len += sprintf(list_gpio + len, "[PULL]PU, ");
+	                break;
+	        default:
+	                break;
+        }
+
+        len += sprintf(list_gpio + len, "[DRV]%2dmA, ", msm_regval_to_drive(drive));
+
+        if (!is_out) {
+            len += sprintf(list_gpio + len, "[INT]%s, ", intr_en ? "YES" : " NO");
+            if (intr_en) {
+                switch (intr_target) {
+	                case 0x0:
+	                        len += sprintf(list_gpio + len, "SPS_PROC, ");
+	                        break;
+	                case 0x1:
+	                        len += sprintf(list_gpio + len, " LPA_DSP, ");
+	                        break;
+	                case 0x2:
+	                        len += sprintf(list_gpio + len, "RPM_PROC, ");
+	                        break;
+	                case 0x3:
+	                        len += sprintf(list_gpio + len, "MSS_PROC, ");
+	                        break;
+	                case 0x4:
+	                        len += sprintf(list_gpio + len, "GSS_PROC, ");
+	                        break;
+	                case 0x5:
+	                        len += sprintf(list_gpio + len, " TZ_PROC, ");
+	                        break;
+	                case 0x6:
+	                        len += sprintf(list_gpio + len, "RESERVED, ");
+	                        break;
+	                case 0x7:
+	                        len += sprintf(list_gpio + len, "    NONE, ");
+	                        break;
+	                default:
+	                        break;
+                }
+            }
+        }
+
+        list_gpio[99] = '\0';
+        if (m) {
+                seq_printf(m, "%s\n", list_gpio);
+        } else {
+                pr_info("%s\n", list_gpio);
+                curr_len += sprintf(gpio_buffer +
+                curr_len, "%s\n", list_gpio);
+        }
+    }
+    return curr_len;
+}
+#endif
+
+
 #ifdef CONFIG_DEBUG_FS
 #include <linux/seq_file.h>
 
@@ -553,26 +652,6 @@ static struct gpio_chip msm_gpio_template = {
 	.dbg_show         = msm_gpio_dbg_show,
 };
 
-/* For dual-edge interrupts in software, since some hardware has no
- * such support:
- *
- * At appropriate moments, this function may be called to flip the polarity
- * settings of both-edge irq lines to try and catch the next edge.
- *
- * The attempt is considered successful if:
- * - the status bit goes high, indicating that an edge was caught, or
- * - the input value of the gpio doesn't change during the attempt.
- * If the value changes twice during the process, that would cause the first
- * test to fail but would force the second, as two opposite
- * transitions would cause a detection no matter the polarity setting.
- *
- * The do-loop tries to sledge-hammer closed the timing hole between
- * the initial value-read and the polarity-write - if the line value changes
- * during that window, an interrupt is lost, the new polarity setting is
- * incorrect, and the first success test will fail, causing a retry.
- *
- * Algorithm comes from Google's msmgpio driver.
- */
 static void msm_gpio_update_dual_edge_pos(struct msm_pinctrl *pctrl,
 					  const struct msm_pingroup *g,
 					  struct irq_data *d)
@@ -684,25 +763,17 @@ static int msm_gpio_irq_set_type(struct irq_data *d, unsigned int type)
 
 	spin_lock_irqsave(&pctrl->lock, flags);
 
-	/*
-	 * For hw without possibility of detecting both edges
-	 */
 	if (g->intr_detection_width == 1 && type == IRQ_TYPE_EDGE_BOTH)
 		set_bit(d->hwirq, pctrl->dual_edge_irqs);
 	else
 		clear_bit(d->hwirq, pctrl->dual_edge_irqs);
 
-	/* Route interrupts to application cpu */
+	
 	val = readl(pctrl->regs + g->intr_target_reg);
 	val &= ~(7 << g->intr_target_bit);
 	val |= g->intr_target_kpss_val << g->intr_target_bit;
 	writel(val, pctrl->regs + g->intr_target_reg);
 
-	/* Update configuration for gpio.
-	 * RAW_STATUS_EN is left on for all gpio irqs. Due to the
-	 * internal circuitry of TLMM, toggling the RAW_STATUS
-	 * could cause the INTR_STATUS to be set for EDGE interrupts.
-	 */
 	val = readl(pctrl->regs + g->intr_cfg_reg);
 	val |= BIT(g->intr_raw_status_bit);
 	if (g->intr_detection_width == 2) {
@@ -807,10 +878,6 @@ static void msm_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 
 	chained_irq_enter(chip, desc);
 
-	/*
-	 * Each pin has it's own IRQ status register, so use
-	 * enabled_irq bitmap to limit the number of reads.
-	 */
 	for_each_set_bit(i, pctrl->enabled_irqs, pctrl->chip.ngpio) {
 		g = &pctrl->soc->groups[i];
 		val = readl(pctrl->regs + g->intr_status_reg);
@@ -821,18 +888,13 @@ static void msm_gpio_irq_handler(unsigned int irq, struct irq_desc *desc)
 		}
 	}
 
-	/* No interrupts were flagged */
+	
 	if (handled == 0)
 		handle_bad_irq(irq, desc);
 
 	chained_irq_exit(chip, desc);
 }
 
-/*
- * Add MPM extensions for the irqchip.
- * Enable the MPM driver to enable/disable
- * suspend/resume based on gpio interrupts
- */
 
 struct irq_chip mpm_pinctrl_extn = {
 	.irq_eoi	= NULL,
@@ -888,6 +950,10 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 	gpiochip_set_chained_irqchip(chip, &msm_gpio_irq_chip, pctrl->irq,
 				     msm_gpio_irq_handler);
 	of_mpm_init();
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+	g_chip = &pctrl->chip;
+#endif
 
 	return 0;
 }

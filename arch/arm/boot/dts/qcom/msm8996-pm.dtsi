@@ -289,6 +289,7 @@
 			<0xff 115>, /* mdss_irq */
 			<0xff 126>, /* bam_irq[0] */
 			<0xff 127>, /* blsp1_qup_irq(0) */
+			<0xff 129>, /* blsp1_qup_irq(2) */
 			<0xff 132>, /* blsp1_qup_irq(5) */
 			<0xff 133>, /* blsp2_qup_irq(0) */
 			<0xff 134>, /* blsp2_qup_irq(1) */
@@ -343,6 +344,7 @@
 			<0xff 270>, /* bam_irq[0] */
 			<0xff 271>, /* bam_irq[0] */
 			<0xff 276>, /* wlan_pci */
+			<0xff 280>, /* mobicore */
 			<0xff 283>, /* pcie20_0_int_pls_err */
 			<0xff 284>, /* pcie20_0_int_aer_legacy */
 			<0xff 286>, /* pcie20_0_int_pls_link_down */
@@ -478,7 +480,8 @@
 			<66  131>,
 			<67  132>, /* PCIe1 */
 			<68  133>,
-			<69  145>;
+			<69  145>,
+			<0xff 10>;
 	};
 
 	qcom,rpm-stats@200000 {
@@ -491,6 +494,19 @@
 			    "heap_phys_addrbase";
 		qcom,sleep-stats-version = <2>;
 	};
+
+	qcom,rpm-stats-ver {
+		compatible = "qcom,rpm-stats-ver";
+		reg = <0x290000 0x4>;
+		reg-names = "rpm_data_base";
+	};
+
+	qcom,rpm-stats@2a1fa0 {
+		compatible = "qcom,rpm-stats";
+		reg = <0x2a1fa0 0x60>;
+		reg-names = "phys_addr_base";
+		qcom,sleep-stats-version = <3>;
+  };
 
 	qcom,pm-snoc-client {
 		compatible = "qcom,pm-snoc-client";

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1360,6 +1360,12 @@ static int ipa3_wwan_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 					rmnet_mux_val.mux_id);
 				return rc;
 			}
+			if (rmnet_ipa3_ctx->rmnet_index
+				>= MAX_NUM_OF_MUX_CHANNEL) {
+				IPAWANERR("Exceed mux_channel limit(%d)\n",
+				rmnet_ipa3_ctx->rmnet_index);
+				return -EFAULT;
+			}
 			IPAWANDBG("ADD_MUX_CHANNEL(%d, name: %s)\n",
 			extend_ioctl_data.u.rmnet_mux_val.mux_id,
 			extend_ioctl_data.u.rmnet_mux_val.vchannel_name);
@@ -2111,8 +2117,6 @@ static int ipa3_wwan_remove(struct platform_device *pdev)
 	ipa3_del_mux_qmap_hdrs();
 	if (ipa3_qmi_ctx->modem_cfg_emb_pipe_flt == false)
 		ipa3_wwan_del_ul_flt_rule_to_ipa();
-	/* clean up cached QMI msg/handlers */
-	ipa3_qmi_service_exit();
 	ipa3_cleanup_deregister_intf();
 	atomic_set(&is_initialized, 0);
 	pr_info("rmnet_ipa completed deinitialization\n");
@@ -2240,6 +2244,9 @@ static int ipa3_ssr_notifier_cb(struct notifier_block *this,
 		}
 		if (SUBSYS_BEFORE_POWERUP == code) {
 			pr_info("IPA received MPSS BEFORE_POWERUP\n");
+			if (atomic_read(&is_ssr))
+				/* clean up cached QMI msg/handlers */
+				ipa3_qmi_service_exit();
 			ipa3_proxy_clk_vote();
 			pr_info("IPA BEFORE_POWERUP handling is complete\n");
 			return NOTIFY_DONE;

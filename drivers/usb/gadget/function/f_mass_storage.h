@@ -13,8 +13,8 @@ struct fsg_module_parameters {
 
 	unsigned int	file_count, ro_count, removable_count, cdrom_count;
 	unsigned int	nofua_count;
-	unsigned int	luns;	/* nluns */
-	bool		stall;	/* can_stall */
+	unsigned int	luns;	
+	bool		stall;	
 };
 
 #define _FSG_MODULE_PARAM_ARRAY(prefix, params, name, type, desc)	\
@@ -59,15 +59,7 @@ struct fsg_module_parameters {
 
 struct fsg_common;
 
-/* FSF callback functions */
 struct fsg_operations {
-	/*
-	 * Callback function to call when thread exits.  If no
-	 * callback is set or it returns value lower then zero MSF
-	 * will force eject all LUNs it operates on (including those
-	 * marked as non-removable or with prevent_medium_removal flag
-	 * set).
-	 */
 	int (*thread_exits)(struct fsg_common *common);
 };
 
@@ -82,14 +74,8 @@ struct fsg_opts {
 	struct usb_function_instance func_inst;
 	struct fsg_lun_opts lun0;
 	struct config_group *default_groups[2];
-	bool no_configfs; /* for legacy gadgets */
+	bool no_configfs; 
 
-	/*
-	 * Read/write access to configfs attributes is handled by configfs.
-	 *
-	 * This is to protect the data from concurrent access by read/write
-	 * and create symlink/remove symlink.
-	 */
 	struct mutex			lock;
 	int				refcnt;
 };
@@ -106,13 +92,13 @@ struct fsg_config {
 	unsigned nluns;
 	struct fsg_lun_config luns[FSG_MAX_LUNS];
 
-	/* Callback functions. */
+	
 	const struct fsg_operations	*ops;
-	/* Gadget's private data. */
+	
 	void			*private_data;
 
-	const char *vendor_name;		/*  8 characters or less */
-	const char *product_name;		/* 16 characters or less */
+	const char *vendor_name;		
+	const char *product_name;		
 
 	char			can_stall;
 	unsigned int		fsg_num_buffers;
@@ -164,4 +150,7 @@ void fsg_config_from_params(struct fsg_config *cfg,
 			    unsigned int fsg_num_buffers);
 int fsg_sysfs_update(struct fsg_common *common, struct device *dev,
 				bool create);
-#endif /* USB_F_MASS_STORAGE_H */
+
+int ums_ctrlrequest(struct usb_composite_dev *cdev,
+		const struct usb_ctrlrequest *ctrl);
+#endif 

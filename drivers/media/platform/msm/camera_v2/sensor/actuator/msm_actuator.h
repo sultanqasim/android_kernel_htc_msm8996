@@ -105,6 +105,10 @@ struct msm_actuator_ctrl_t {
 	struct msm_actuator_vreg vreg_cfg;
 	struct park_lens_data_t park_lens;
 	uint32_t max_code_size;
+	
+	uint8_t closeloop;
+	uint8_t FSTmode;
+	
 };
 
 #endif

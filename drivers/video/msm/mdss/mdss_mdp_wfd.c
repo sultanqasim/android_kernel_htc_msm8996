@@ -20,10 +20,6 @@
 
 #include "mdss_mdp_wfd.h"
 
-/*
- * time out value for wfd to wait for any pending frames to finish
- * assuming 30fps, and max 5 frames in the queue
- */
 #define WFD_TIMEOUT_IN_MS 150
 
 struct mdss_mdp_wfd *mdss_mdp_wfd_init(struct device *device,
@@ -301,7 +297,7 @@ static int mdss_mdp_wfd_validate_out_configuration(struct mdss_mdp_wfd *wfd,
 
 	if (mdss_mdp_is_wb_mdp_intf(wb_idx, ctl->num)) {
 		fmt = mdss_mdp_get_format_params(layer->buffer.format);
-		if (!(fmt->flag & VALID_MDP_WB_INTF_FORMAT)) {
+		if (!fmt || !(fmt->flag & VALID_MDP_WB_INTF_FORMAT)) {
 			pr_err("wb=%d does not support dst fmt:%d\n", wb_idx,
 				layer->buffer.format);
 			return -EINVAL;

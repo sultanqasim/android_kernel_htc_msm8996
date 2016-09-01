@@ -61,6 +61,10 @@ struct msm_sensor_fn_t {
 	int (*sensor_power_down)(struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up)(struct msm_sensor_ctrl_t *);
 	int (*sensor_match_id)(struct msm_sensor_ctrl_t *);
+   int (*sensor_i2c_read_fuseid)(struct sensorb_cfg_data *cdata, struct msm_sensor_ctrl_t *s_ctrl); 
+#ifdef CONFIG_COMPAT
+	int (*sensor_i2c_read_fuseid32)(struct sensorb_cfg_data32 *cdata, struct msm_sensor_ctrl_t *s_ctrl); 
+#endif
 };
 
 struct msm_sensor_ctrl_t {
@@ -90,6 +94,9 @@ struct msm_sensor_ctrl_t {
 	uint8_t is_csid_tg_mode;
 };
 
+#ifdef CONFIG_OIS_CALIBRATION
+int htc_ois_calibration(struct msm_sensor_ctrl_t *s_ctrl, int cam_id);
+#endif
 int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp);
 
 int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);

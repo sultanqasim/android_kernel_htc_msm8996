@@ -75,9 +75,6 @@ static int sharedmem_mmap(struct uio_info *info, struct vm_area_struct *vma)
 	return result;
 }
 
-/* Setup the shared ram permissions.
- * This function currently supports the mpss client only.
- */
 static void setup_shared_ram_perms(u32 client_id, phys_addr_t addr, u32 size)
 {
 	int ret;
@@ -100,6 +97,10 @@ static void setup_shared_ram_perms(u32 client_id, phys_addr_t addr, u32 size)
 	}
 }
 
+#if 1 
+extern bool is_smlog_enabled(void);
+#endif 
+
 static int msm_sharedmem_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -112,7 +113,7 @@ static int msm_sharedmem_probe(struct platform_device *pdev)
 	bool is_addr_dynamic = false;
 	struct sharemem_qmi_entry qmi_entry;
 
-	/* Get the addresses from platform-data */
+	
 	if (!pdev->dev.of_node) {
 		pr_err("Node not found\n");
 		ret = -ENODEV;
@@ -143,6 +144,14 @@ static int msm_sharedmem_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+        #if 1 
+        if (!strncmp(clnt_res->name, "rmtfs", 5) && is_smlog_enabled()){
+                
+                shared_mem_size = 0x1400000;
+	        shared_mem_pyhsical = 0x84000000;	  
+        }
+        #endif 
+
 	if (shared_mem_pyhsical == 0) {
 		is_addr_dynamic = true;
 		shared_mem = dma_alloc_coherent(&pdev->dev, shared_mem_size,
@@ -154,11 +163,11 @@ static int msm_sharedmem_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* Set up the permissions for the shared ram that was allocated. */
+	
 	setup_shared_ram_perms(client_id, shared_mem_pyhsical, shared_mem_size);
 
-	/* Setup device */
-	info->mmap = sharedmem_mmap; /* Custom mmap function. */
+	
+	info->mmap = sharedmem_mmap; 
 	info->name = clnt_res->name;
 	info->version = "1.0";
 	info->mem[0].addr = shared_mem_pyhsical;

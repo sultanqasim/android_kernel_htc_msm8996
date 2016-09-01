@@ -19,36 +19,31 @@
 #include <linux/pm_qos.h>
 #include "sdhci-pltfm.h"
 
-/* This structure keeps information per regulator */
 struct sdhci_msm_reg_data {
-	/* voltage regulator handle */
+	
 	struct regulator *reg;
-	/* regulator name */
+	
 	const char *name;
-	/* voltage level to be set */
+	
 	u32 low_vol_level;
 	u32 high_vol_level;
-	/* Load values for low power and high power mode */
+	
 	u32 lpm_uA;
 	u32 hpm_uA;
 
-	/* is this regulator enabled? */
+	
 	bool is_enabled;
-	/* is this regulator needs to be always on? */
+	
 	bool is_always_on;
-	/* is low power mode setting required for this regulator? */
+	
 	bool lpm_sup;
 	bool set_voltage_sup;
 };
 
-/*
- * This structure keeps information for all the
- * regulators required for a SDCC slot.
- */
 struct sdhci_msm_slot_reg_data {
-	/* keeps VDD/VCC regulator info */
+	
 	struct sdhci_msm_reg_data *vdd_data;
-	 /* keeps VDD IO regulator info */
+	 
 	struct sdhci_msm_reg_data *vdd_io_data;
 };
 
@@ -64,10 +59,6 @@ struct sdhci_msm_gpio_data {
 };
 
 struct sdhci_msm_pin_data {
-	/*
-	 * = 1 if controller pins are using gpios
-	 * = 0 if controller has dedicated MSM pads
-	 */
 	u8 is_gpio;
 	struct sdhci_msm_gpio_data *gpio_data;
 };
@@ -75,6 +66,7 @@ struct sdhci_msm_pin_data {
 struct sdhci_pinctrl_data {
 	struct pinctrl          *pctrl;
 	struct pinctrl_state    *pins_active;
+	struct pinctrl_state    *pins_active_sdr104;
 	struct pinctrl_state    *pins_sleep;
 };
 
@@ -105,10 +97,6 @@ struct sdhci_msm_pm_qos_data {
 	bool legacy_valid;
 };
 
-/*
- * PM QoS for group voting management - each cpu group defined is associated
- * with 1 instance of this structure.
- */
 struct sdhci_msm_pm_qos_group {
 	struct pm_qos_request req;
 	struct delayed_work unvote_work;
@@ -116,7 +104,6 @@ struct sdhci_msm_pm_qos_group {
 	s32 latency;
 };
 
-/* PM QoS HW IRQ voting */
 struct sdhci_msm_pm_qos_irq {
 	struct pm_qos_request req;
 	struct delayed_work unvote_work;
@@ -128,10 +115,10 @@ struct sdhci_msm_pm_qos_irq {
 };
 
 struct sdhci_msm_pltfm_data {
-	/* Supported UHS-I Modes */
+	
 	u32 caps;
 
-	/* More capabilities */
+	
 	u32 caps2;
 
 	unsigned long mmc_bus_width;
@@ -142,13 +129,14 @@ struct sdhci_msm_pltfm_data {
 	bool pin_cfg_sts;
 	struct sdhci_msm_pin_data *pin_data;
 	struct sdhci_pinctrl_data *pctrl_data;
-	int status_gpio; /* card detection GPIO that is configured as IRQ */
+	int status_gpio; 
 	struct sdhci_msm_bus_voting_data *voting_data;
 	u32 *sup_clk_table;
 	unsigned char sup_clk_cnt;
 	int sdiowakeup_irq;
 	u32 *sup_ice_clk_table;
 	unsigned char sup_ice_clk_cnt;
+	int slot_type;
 	u32 ice_clk_max;
 	u32 ice_clk_min;
 	struct sdhci_msm_pm_qos_data pm_qos_data;
@@ -173,15 +161,15 @@ struct sdhci_msm_ice_data {
 
 struct sdhci_msm_host {
 	struct platform_device	*pdev;
-	void __iomem *core_mem;    /* MSM SDCC mapped address */
-	int	pwr_irq;	/* power irq */
-	struct clk	 *clk;     /* main SD/MMC bus clock */
-	struct clk	 *pclk;    /* SDHC peripheral bus clock */
-	struct clk	 *bus_clk; /* SDHC bus voter clock */
-	struct clk	 *ff_clk; /* CDC calibration fixed feedback clock */
-	struct clk	 *sleep_clk; /* CDC calibration sleep clock */
-	struct clk	 *ice_clk; /* SDHC peripheral ICE clock */
-	atomic_t clks_on; /* Set if clocks are enabled */
+	void __iomem *core_mem;    
+	int	pwr_irq;	
+	struct clk	 *clk;     
+	struct clk	 *pclk;    
+	struct clk	 *bus_clk; 
+	struct clk	 *ff_clk; 
+	struct clk	 *sleep_clk; 
+	struct clk	 *ice_clk; 
+	atomic_t clks_on; 
 	struct sdhci_msm_pltfm_data *pdata;
 	struct mmc_host  *mmc;
 	struct sdhci_pltfm_data sdhci_msm_pdata;
@@ -190,7 +178,7 @@ struct sdhci_msm_host {
 	struct completion pwr_irq_completion;
 	struct sdhci_msm_bus_vote msm_bus_vote;
 	struct device_attribute	polling;
-	u32 clk_rate; /* Keeps track of current clock rate that is set */
+	u32 clk_rate; 
 	bool tuning_done;
 	bool calibration_done;
 	u8 saved_tuning_phase;
@@ -207,12 +195,15 @@ struct sdhci_msm_host {
 	u32 caps_0;
 	struct sdhci_msm_ice_data ice;
 	u32 ice_clk_rate;
+	struct proc_dir_entry   *speed_class;
+	struct proc_dir_entry   *sd_tray_state;
 	struct sdhci_msm_pm_qos_group *pm_qos;
 	int pm_qos_prev_cpu;
 	struct device_attribute pm_qos_group_enable_attr;
 	struct device_attribute pm_qos_group_status_attr;
 	bool pm_qos_group_enable;
 	struct sdhci_msm_pm_qos_irq pm_qos_irq;
+	bool tuning_in_progress;
 };
 
 extern char *saved_command_line;
@@ -228,4 +219,4 @@ void sdhci_msm_pm_qos_cpu_vote(struct sdhci_host *host,
 bool sdhci_msm_pm_qos_cpu_unvote(struct sdhci_host *host, int cpu, bool async);
 
 
-#endif /* __SDHCI_MSM_H__ */
+#endif 

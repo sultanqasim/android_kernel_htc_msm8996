@@ -108,14 +108,14 @@ static int soc_compr_open_fe(struct snd_compr_stream *cstream)
 		dev_dbg(fe->dev, "ASoC: %s no valid %s route\n",
 			fe->dai_link->name, stream ? "capture" : "playback");
 
-	/* calculate valid and active FE <-> BE dpcms */
+	
 	dpcm_process_paths(fe, stream, &list, 1);
 
 	fe->dpcm[stream].runtime_update = SND_SOC_DPCM_UPDATE_FE;
 
 	ret = dpcm_be_dai_startup(fe, stream);
 	if (ret < 0) {
-		/* clean up all links */
+		
 		list_for_each_entry(dpcm, &fe->dpcm[stream].be_clients, list_be)
 			dpcm->state = SND_SOC_DPCM_LINK_STATE_FREE;
 
@@ -148,11 +148,6 @@ out:
 	return ret;
 }
 
-/*
- * Power down the audio subsystem pmdown_time msecs after close is called.
- * This is to ensure there are no pops or clicks in between any music tracks
- * due to DAPM power cycling.
- */
 static void close_delayed_work(struct work_struct *work)
 {
 	struct snd_soc_pcm_runtime *rtd =
@@ -166,7 +161,7 @@ static void close_delayed_work(struct work_struct *work)
 		 codec_dai->playback_active ? "active" : "inactive",
 		 rtd->pop_wait ? "yes" : "no");
 
-	/* are we waiting on this codec DAI stream */
+	
 	if (rtd->pop_wait == 1) {
 		rtd->pop_wait = 0;
 		snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_PLAYBACK,
@@ -220,7 +215,7 @@ static int soc_compr_free(struct snd_compr_stream *cstream)
 					   msecs_to_jiffies(rtd->pmdown_time));
 		}
 	} else {
-		/* capture streams can be powered down now */
+		
 		snd_soc_dapm_stream_event(rtd,
 			SNDRV_PCM_STREAM_CAPTURE,
 			SND_SOC_DAPM_STREAM_STOP);
@@ -259,7 +254,7 @@ static int soc_compr_free_fe(struct snd_compr_stream *cstream)
 
 	ret = dpcm_be_dai_shutdown(fe, stream);
 
-	/* mark FE's links ready to prune */
+	
 	list_for_each_entry(dpcm, &fe->dpcm[stream].be_clients, list_be)
 		dpcm->state = SND_SOC_DPCM_LINK_STATE_FREE;
 
@@ -376,12 +371,6 @@ static int soc_compr_set_params(struct snd_compr_stream *cstream,
 
 	mutex_lock_nested(&rtd->pcm_mutex, rtd->pcm_subclass);
 
-	/* first we call set_params for the platform driver
-	 * this should configure the soc side
-	 * if the machine has compressed ops then we call that as well
-	 * expectation is that platform and machine will configure everything
-	 * for this compress path, like configuring pcm port for codec
-	 */
 	if (platform->driver->compr_ops && platform->driver->compr_ops->set_params) {
 		ret = platform->driver->compr_ops->set_params(cstream, params);
 		if (ret < 0)
@@ -401,7 +390,7 @@ static int soc_compr_set_params(struct snd_compr_stream *cstream,
 		snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_CAPTURE,
 					SND_SOC_DAPM_STREAM_START);
 
-	/* cancel any delayed stream shutdown that is pending */
+	
 	rtd->pop_wait = 0;
 	mutex_unlock(&rtd->pcm_mutex);
 
@@ -465,13 +454,6 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 	mutex_lock_nested(&fe->card->mutex, SND_SOC_CARD_CLASS_RUNTIME);
 
 	if (!(fe->dai_link->async_ops & ASYNC_DPCM_SND_SOC_HW_PARAMS)) {
-		/* first we call set_params for the platform driver
-		 * this should configure the soc side
-		 * if the machine has compressed ops then we call that as well
-		 * expectation is that platform and machine will configure
-		 * everything for this compress path, like configuring pcm
-		 * port for codec
-		 */
 		if (platform->driver->compr_ops &&
 				platform->driver->compr_ops->set_params) {
 			ret = platform->driver->compr_ops->set_params(cstream,
@@ -487,13 +469,6 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 				goto out;
 		}
 
-		/*
-		 * Create an empty hw_params for the BE as the machine
-		 * driver must fix this up to match DSP decoder and
-		 * ASRC configuration.
-		 * I.e. machine driver fixup for compressed BE is
-		 * mandatory.
-		 */
 		memset(&fe->dpcm[fe_substream->stream].hw_params, 0,
 				sizeof(struct snd_pcm_hw_params));
 
@@ -507,13 +482,6 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 		if (ret < 0)
 			goto out;
 	} else {
-		/*
-		 * Create an empty hw_params for the BE as the machine
-		 * driver must fix this up to match DSP decoder and
-		 * ASRC configuration.
-		 * I.e. machine driver fixup for compressed BE is
-		 * mandatory.
-		 */
 		memset(&fe->dpcm[fe_substream->stream].hw_params, 0,
 				sizeof(struct snd_pcm_hw_params));
 
@@ -537,13 +505,6 @@ static int soc_compr_set_params_fe(struct snd_compr_stream *cstream,
 			cstream->be = be_list[i];
 			dpcm_be_hw_params_prepare(cstream);
 		}
-		/* first we call set_params for the platform driver
-		 * this should configure the soc side
-		 * if the machine has compressed ops then we call that as well
-		 * expectation is that platform and machine will configure
-		 * everything this compress path, like configuring pcm port
-		 * for codec
-		 */
 		if (platform->driver->compr_ops &&
 				platform->driver->compr_ops->set_params) {
 			ret = platform->driver->compr_ops->set_params(cstream,
@@ -713,7 +674,16 @@ static int soc_compr_get_metadata(struct snd_compr_stream *cstream,
 	return ret;
 }
 
-/* ASoC Compress operations */
+static int soc_compr_config_effect(struct snd_compr_stream *cstream, void *data, void *payload)
+{
+    struct snd_soc_pcm_runtime *rtd = cstream->private_data;
+   struct snd_soc_platform *platform = rtd->platform;
+   int ret = 0;
+   if (platform->driver->compr_ops && platform->driver->compr_ops->config_effect)
+       ret = platform->driver->compr_ops->config_effect(cstream, data, payload);
+   return ret;
+}
+
 static struct snd_compr_ops soc_compr_ops = {
 	.open		= soc_compr_open,
 	.free		= soc_compr_free,
@@ -726,10 +696,10 @@ static struct snd_compr_ops soc_compr_ops = {
 	.pointer	= soc_compr_pointer,
 	.ack		= soc_compr_ack,
 	.get_caps	= soc_compr_get_caps,
-	.get_codec_caps = soc_compr_get_codec_caps
+	.get_codec_caps = soc_compr_get_codec_caps,
+	.config_effect  = soc_compr_config_effect 
 };
 
-/* ASoC Dynamic Compress operations */
 static struct snd_compr_ops soc_compr_dyn_ops = {
 	.open		= soc_compr_open_fe,
 	.free		= soc_compr_free_fe,
@@ -742,10 +712,10 @@ static struct snd_compr_ops soc_compr_dyn_ops = {
 	.pointer	= soc_compr_pointer,
 	.ack		= soc_compr_ack,
 	.get_caps	= soc_compr_get_caps,
-	.get_codec_caps = soc_compr_get_codec_caps
+	.get_codec_caps = soc_compr_get_codec_caps,
+	.config_effect  = soc_compr_config_effect 
 };
 
-/* create a new compress */
 int soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 {
 	struct snd_soc_codec *codec = rtd->codec;
@@ -764,7 +734,7 @@ int soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 		return -EINVAL;
 	}
 
-	/* check client and interface hw capabilities */
+	
 	snprintf(new_name, sizeof(new_name), "%s %s-%d",
 			rtd->dai_link->stream_name, codec_dai->name, num);
 
@@ -820,7 +790,7 @@ int soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 	} else
 		memcpy(compr->ops, &soc_compr_ops, sizeof(soc_compr_ops));
 
-	/* Add copy callback for not memory mapped DSPs */
+	
 	if (platform->driver->compr_ops && platform->driver->compr_ops->copy)
 		compr->ops->copy = soc_compr_copy;
 
@@ -832,7 +802,7 @@ int soc_new_compress(struct snd_soc_pcm_runtime *rtd, int num)
 		goto compr_err;
 	}
 
-	/* DAPM dai link stream work */
+	
 	INIT_DELAYED_WORK(&rtd->delayed_work, close_delayed_work);
 
 	rtd->compr = compr;

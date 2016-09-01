@@ -32,6 +32,14 @@ int q6audio_get_port_index(u16 port_id)
 		return IDX_AFE_PORT_ID_SECONDARY_PCM_RX;
 	case AFE_PORT_ID_SECONDARY_PCM_TX:
 		return IDX_AFE_PORT_ID_SECONDARY_PCM_TX;
+	case AFE_PORT_ID_TERTIARY_PCM_RX:
+		return IDX_AFE_PORT_ID_TERTIARY_PCM_RX;
+	case AFE_PORT_ID_TERTIARY_PCM_TX:
+		return IDX_AFE_PORT_ID_TERTIARY_PCM_TX;
+	case AFE_PORT_ID_QUATERNARY_PCM_RX:
+		return IDX_AFE_PORT_ID_QUATERNARY_PCM_RX;
+	case AFE_PORT_ID_QUATERNARY_PCM_TX:
+		return IDX_AFE_PORT_ID_QUATERNARY_PCM_TX;
 	case SECONDARY_I2S_RX: return IDX_SECONDARY_I2S_RX;
 	case SECONDARY_I2S_TX: return IDX_SECONDARY_I2S_TX;
 	case MI2S_RX: return IDX_MI2S_RX;
@@ -231,6 +239,15 @@ int q6audio_get_port_id(u16 port_id)
 			return AFE_PORT_ID_SECONDARY_PCM_RX;
 	case AFE_PORT_ID_SECONDARY_PCM_TX:
 			return AFE_PORT_ID_SECONDARY_PCM_TX;
+	case AFE_PORT_ID_TERTIARY_PCM_RX:
+			return AFE_PORT_ID_TERTIARY_PCM_RX;
+	case AFE_PORT_ID_TERTIARY_PCM_TX:
+			return AFE_PORT_ID_TERTIARY_PCM_TX;
+	case AFE_PORT_ID_QUATERNARY_PCM_RX:
+			return AFE_PORT_ID_QUATERNARY_PCM_RX;
+	case AFE_PORT_ID_QUATERNARY_PCM_TX:
+			return AFE_PORT_ID_QUATERNARY_PCM_TX;
+
 	case SECONDARY_I2S_RX: return AFE_PORT_ID_SECONDARY_MI2S_RX;
 	case SECONDARY_I2S_TX: return AFE_PORT_ID_SECONDARY_MI2S_TX;
 	case MI2S_RX: return AFE_PORT_ID_PRIMARY_MI2S_RX;
@@ -422,9 +439,6 @@ int q6audio_convert_virtual_to_portid(u16 port_id)
 {
 	int ret;
 
-	/* if port_id is virtual, convert to physical..
-	 * if port_id is already physical, return physical
-	 */
 	if (q6audio_validate_port(port_id) < 0) {
 		if (port_id == RT_PROXY_DAI_001_RX ||
 			port_id == RT_PROXY_DAI_001_TX ||
@@ -450,6 +464,10 @@ int q6audio_is_digital_pcm_interface(u16 port_id)
 	case AFE_PORT_ID_PRIMARY_PCM_TX:
 	case AFE_PORT_ID_SECONDARY_PCM_RX:
 	case AFE_PORT_ID_SECONDARY_PCM_TX:
+	case AFE_PORT_ID_TERTIARY_PCM_RX:
+	case AFE_PORT_ID_TERTIARY_PCM_TX:
+	case AFE_PORT_ID_QUATERNARY_PCM_RX:
+	case AFE_PORT_ID_QUATERNARY_PCM_TX:
 	case SECONDARY_I2S_RX:
 	case SECONDARY_I2S_TX:
 	case MI2S_RX:
@@ -547,6 +565,10 @@ int q6audio_validate_port(u16 port_id)
 	case AFE_PORT_ID_PRIMARY_PCM_TX:
 	case AFE_PORT_ID_SECONDARY_PCM_RX:
 	case AFE_PORT_ID_SECONDARY_PCM_TX:
+	case AFE_PORT_ID_TERTIARY_PCM_RX:
+	case AFE_PORT_ID_TERTIARY_PCM_TX:
+	case AFE_PORT_ID_QUATERNARY_PCM_RX:
+	case AFE_PORT_ID_QUATERNARY_PCM_TX:
 	case SECONDARY_I2S_RX:
 	case SECONDARY_I2S_TX:
 	case MI2S_RX:
