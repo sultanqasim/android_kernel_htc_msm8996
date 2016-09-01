@@ -85,6 +85,21 @@ void ion_removed_heap_destroy(struct ion_heap *);
 #define ION_CP_ALLOCATE_FAIL -1
 #define ION_RESERVED_ALLOCATE_FAIL -1
 
+/**
+ * ion_do_cache_op - do cache operations.
+ *
+ * @client - pointer to ION client.
+ * @handle - pointer to buffer handle.
+ * @uaddr -  virtual address to operate on.
+ * @offset - offset from physical address.
+ * @len - Length of data to do cache operation on.
+ * @cmd - Cache operation to perform:
+ *		ION_IOC_CLEAN_CACHES
+ *		ION_IOC_INV_CACHES
+ *		ION_IOC_CLEAN_INV_CACHES
+ *
+ * Returns 0 on success
+ */
 int ion_do_cache_op(struct ion_client *client, struct ion_handle *handle,
 			void *uaddr, unsigned long offset, unsigned long len,
 			unsigned int cmd);
@@ -114,4 +129,4 @@ struct sg_table *ion_create_chunked_sg_table(phys_addr_t buffer_base,
 					size_t chunk_size, size_t total_size);
 
 void show_ion_usage(struct ion_device *dev);
-#endif 
+#endif /* _MSM_ION_PRIV_H */
