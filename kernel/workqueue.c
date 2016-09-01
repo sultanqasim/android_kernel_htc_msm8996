@@ -4934,7 +4934,7 @@ void workqueue_show_pending_work(void)
 	}
 }
 
-#endif 
+#endif /* CONFIG_HTC_DEBUG_WORKQUEUE */
 
 static int __init init_workqueues(void)
 {

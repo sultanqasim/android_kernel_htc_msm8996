@@ -472,23 +472,43 @@ static void msm_ispif_sel_csid_core(struct ispif_device *ispif,
 	switch (intftype) {
 	case PIX0:
 		data &= ~(BIT(1) | BIT(0));
+#if 1
+		data |= (uint32_t) csid;
+#else
 		data |= csid;
+#endif
 		break;
 	case RDI0:
 		data &= ~(BIT(5) | BIT(4));
+#if 1
+		data |= ((uint32_t) csid) << 4;
+#else
 		data |= (csid << 4);
+#endif
 		break;
 	case PIX1:
 		data &= ~(BIT(9) | BIT(8));
+#if 1
+		data |= ((uint32_t) csid) << 8;
+#else
 		data |= (csid << 8);
+#endif
 		break;
 	case RDI1:
 		data &= ~(BIT(13) | BIT(12));
+#if 1
+		data |= ((uint32_t) csid) << 12;
+#else
 		data |= (csid << 12);
+#endif
 		break;
 	case RDI2:
 		data &= ~(BIT(21) | BIT(20));
+#if 1
+		data |= ((uint32_t) csid) << 20;
+#else
 		data |= (csid << 20);
+#endif
 		break;
 	}
 
@@ -564,9 +584,17 @@ static void msm_ispif_enable_intf_cids(struct ispif_device *ispif,
 
 	data = msm_camera_io_r(ispif->base + intf_addr);
 	if (enable)
+#if 1
+		data |=  (uint32_t) cid_mask;
+#else
 		data |= cid_mask;
+#endif
 	else
+#if 1
+		data &= ~((uint32_t) cid_mask);
+#else
 		data &= ~cid_mask;
+#endif
 	msm_camera_io_w_mb(data, ispif->base + intf_addr);
 }
 

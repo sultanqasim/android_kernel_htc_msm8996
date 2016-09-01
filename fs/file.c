@@ -517,6 +517,9 @@ static void fdtable_usage_dump(struct fdtable *fdt)
 	kfree(buf);
 }
 
+/*
+ * allocate a file descriptor, mark it busy.
+ */
 int __alloc_fd(struct files_struct *files,
 	       unsigned start, unsigned end, unsigned flags)
 {
@@ -574,6 +577,9 @@ repeat:
 #endif
 
 out:
+	/*
+	 * debugging: dump all fd users if file table is full (EMFILE)
+	 */
 	if (unlikely(error == -EMFILE)) {
 		if (jiffies > debugging_ratelimit) {
 			debugging_ratelimit = jiffies + msecs_to_jiffies(debugging_delay_ms);
@@ -681,6 +687,9 @@ int __close_fd(struct files_struct *files, unsigned fd)
 	file = fdt->fd[fd];
 	if (!file) {
 		user = &fdt->user[fd];
+		/*
+		 * detecting the double closing that made by other thread
+		 */
 		if (unlikely(user->remover && user->remover != current->pid)) {
 			task = find_task_by_vpid(user->remover);
 			pr_warn("[%s] fd %u of %s %d:%d is already closed by thread %d (%s %d:%d) at %lu ms, opened at %lu ms\n",

@@ -948,6 +948,9 @@ static long msm_isp_ioctl_unlocked(struct v4l2_subdev *sd,
 	unsigned int cmd, void *arg)
 {
 	long rc = 0;
+	
+	long rc2 = 0;
+	
 	struct vfe_device *vfe_dev = v4l2_get_subdevdata(sd);
 
 	if (!vfe_dev || !vfe_dev->vfe_base) {
@@ -1027,7 +1030,13 @@ static long msm_isp_ioctl_unlocked(struct v4l2_subdev *sd,
 		if (atomic_read(&vfe_dev->error_info.overflow_state)
 			!= HALT_ENFORCED) {
 			rc = msm_isp_stats_reset(vfe_dev);
+#if 1
+			rc2 = msm_isp_axi_reset(vfe_dev, arg);
+			if (!rc && rc2)
+					rc = rc2;
+#else
 			rc |= msm_isp_axi_reset(vfe_dev, arg);
+#endif
 		} else {
 			pr_err_ratelimited("%s: no HW reset, halt enforced.\n",
 				__func__);
@@ -1039,7 +1048,13 @@ static long msm_isp_ioctl_unlocked(struct v4l2_subdev *sd,
 		if (atomic_read(&vfe_dev->error_info.overflow_state)
 			!= HALT_ENFORCED) {
 			rc = msm_isp_stats_restart(vfe_dev);
+#if 1
+			rc2 = msm_isp_axi_reset(vfe_dev, arg);
+			if (!rc && rc2)
+					rc = rc2;
+#else
 			rc |= msm_isp_axi_restart(vfe_dev, arg);
+#endif
 		} else {
 			pr_err_ratelimited("%s: no AXI restart, halt enforced.\n",
 				__func__);
@@ -1819,8 +1834,10 @@ void msm_isp_update_error_frame_count(struct vfe_device *vfe_dev)
 {
 	struct msm_vfe_error_info *error_info = &vfe_dev->error_info;
 	error_info->info_dump_frame_count++;
+#if 0
 	if (error_info->info_dump_frame_count == 0)
 		error_info->info_dump_frame_count++;
+#endif
 }
 
 
@@ -1919,6 +1936,9 @@ static void msm_isp_process_overflow_irq(
 
 		if (atomic_read(&vfe_dev->error_info.overflow_state)
 			!= HALT_ENFORCED) {
+			
+			memset(&error_event, 0, sizeof(error_event));
+			
 			error_event.frame_id =
 				vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id;
 			error_event.u.error_info.err_type =
@@ -1936,10 +1956,16 @@ void msm_isp_reset_burst_count_and_frame_drop(
 		stream_info->stream_type != BURST_STREAM) {
 		return;
 	}
+#if 1
+	if (stream_info->num_burst_capture != 0)
+#else
 	if (stream_info->stream_type == BURST_STREAM &&
 		stream_info->num_burst_capture != 0) {
+#endif
 		msm_isp_reset_framedrop(vfe_dev, stream_info);
+#if 0
 	}
+#endif
 }
 
 static void msm_isp_enqueue_tasklet_cmd(struct vfe_device *vfe_dev,

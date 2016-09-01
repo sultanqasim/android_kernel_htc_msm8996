@@ -23,6 +23,7 @@
 #define FMDINFO(fmt, args...) pr_info("[FM] silabs_radio: " fmt, ##args)
 #define FMDERR(fmt, args...) pr_err("[FM] silabs_radio: " fmt, ##args)
 
+/* For bounds checking. */
 const unsigned char MIN_RDS_STD = 0x00;
 const unsigned char MAX_RDS_STD = 0x02;
 const unsigned char MIN_SRCH_MODE = 0x00;
