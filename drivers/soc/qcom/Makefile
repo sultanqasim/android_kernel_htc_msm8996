@@ -61,6 +61,7 @@ obj-$(CONFIG_CP_ACCESS64) += cpaccess64.o
 obj-$(CONFIG_MSM_RPM_STATS_LOG) += rpm_stats.o rpm_master_stat.o rpm_rail_stats.o system_stats.o
 obj-$(CONFIG_HW_PERF_EVENTS) += perf_event_kryo.o perf_event_l2.o
 obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
+obj-y += rpm_stats_ver.o
 obj-$(CONFIG_MSM_JTAG) += jtag-fuse.o jtag.o
 obj-$(CONFIG_MSM_JTAG_MM) +=  jtag-fuse.o jtag-mm.o
 obj-$(CONFIG_MSM_JTAGV8) += jtag-fuse.o jtagv8.o jtagv8-etm.o
@@ -75,6 +76,7 @@ obj-$(CONFIG_MSM_SCM_ERRATA) += scm-errata.o
 obj-$(CONFIG_MSM_PFE_WA) += pfe-wa.o
 obj-$(CONFIG_MSM_PERFORMANCE) += msm_performance.o
 obj-$(CONFIG_ARCH_MSM8996) += msm_cpu_voltage.o
+obj-$(CONFIG_FPR_FPC)  += htc_smi.o
 obj-$(CONFIG_MSM_POWER) += msm_power.o
 
 ifdef CONFIG_MSM_SUBSYSTEM_RESTART
